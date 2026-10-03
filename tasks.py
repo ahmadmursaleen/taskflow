@@ -1,0 +1,907 @@
+#!/usr/bin/env python3
+"""gittasks - git-native task board for humans and AI agents. Stdlib only.
+
+One file per task in tasks/<id>.md. Git is the source of truth; a claim is a
+commit that flips status todo -> in_progress and is pushed. If the push loses
+the race, the claim is rolled back and you are told who won.
+
+Leases: with TASK_LEASE=<seconds> set (agents.py does this), a claim records
+`lease_until`, which the owner renews with `heartbeat`. An in_progress task whose
+lease has expired is "stale" and can be claimed again (a takeover), so a crashed
+machine cannot block the board. Claims without TASK_LEASE (humans) never expire.
+"""
+import argparse, calendar, os, re, subprocess, sys, time
+from pathlib import Path
+
+if __name__ == "__main__" and os.name == "nt" and not sys.flags.utf8_mode:  # Windows: UTF-8 for files,
+    os.environ["PYTHONUTF8"] = "1"  # git output and every child process
+    try:
+        sys.exit(subprocess.call([sys.executable, *sys.argv]))
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+ROOT = Path(os.environ.get("TASKS_ROOT", ".")).resolve()
+DIR = ROOT / "tasks"
+STATUSES = ["todo", "in_progress", "done", "dropped"]
+CLOSED = ("done", "dropped")  # finished for the board: nothing left to do
+COLORS = {"todo": "#e5e7eb", "in_progress": "#fde68a", "done": "#86efac", "dropped": "#f3f4f6"}
+FREEZE = "FROZEN"  # tasks/FROZEN holds the reason while the board is frozen (no new claims)
+ASSUMPTION = re.compile(r"^- ASSUMPTION \((.+?) by (\S+)\): (.*)$", re.M)
+LEASE_FMT = "%Y-%m-%dT%H:%M:%SZ"
+DEFAULT_LEASE = 1200
+
+
+# ---------- model ----------
+def parse(path):
+    return parse_text(path.read_text(), path.stem, path)
+
+
+def parse_text(text, tid, path=None):
+    m = re.match(r"---\n(.*?)\n---\n?(.*)", text, re.S)
+    meta, body = {}, text
+    if m:
+        body = m.group(2)
+        for line in m.group(1).splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                meta[k.strip()] = v.strip()
+    deps = [d.strip() for d in meta.get("deps", "").strip("[]").split(",") if d.strip()]
+    return dict(id=tid, path=path, title=meta.get("title", tid),
+                status=meta.get("status", "todo"), owner=meta.get("owner", ""),
+                lease_until=meta.get("lease_until", ""), attempts=int(meta.get("attempts") or 1),
+                hold=meta.get("hold", ""), extended=meta.get("extended", ""), parent=meta.get("parent", ""),
+                releases=int(meta.get("releases") or 0), subtasks=meta.get("subtasks", ""),
+                deps=deps, prio=int(meta.get("prio", "2") or 2), body=body)
+
+
+def lease_end(t):
+    """Lease expiry as epoch seconds; None if the task has no (valid) lease."""
+    try:
+        return calendar.timegm(time.strptime(t["lease_until"], LEASE_FMT))
+    except ValueError:
+        return None
+
+
+def new_lease(secs):
+    return time.strftime(LEASE_FMT, time.gmtime(time.time() + secs))
+
+
+def is_stale(t):
+    end = lease_end(t)
+    return t["status"] == "in_progress" and end is not None and end < time.time()
+
+
+def load():
+    return {t["id"]: t for t in map(parse, sorted(DIR.glob("*.md")))}
+
+
+def write(path, text):
+    with open(path, "w", encoding="utf-8", newline="\n") as f:  # LF on every OS: no line-ending churn
+        f.write(text)
+
+
+def set_fields(t, **kw):
+    text = t["path"].read_text()
+    for k, v in kw.items():
+        text, n = re.subn(rf"^{k}:.*$", lambda _: f"{k}: {v}", text, count=1, flags=re.M)
+        if not n:
+            text = text.replace("\n---\n", f"\n{k}: {v}\n---\n", 1)
+    write(t["path"], text)
+
+
+def analyze(ts):
+    """Adds: stale, ready, dependents (transitive, open count), level (layer in graph), orphaned (dropped deps)."""
+    rev = {i: [] for i in ts}
+    for t in ts.values():
+        for d in t["deps"]:
+            if d in rev:
+                rev[d].append(t["id"])
+
+    def closure(i, seen=None):
+        seen = set() if seen is None else seen
+        for c in rev[i]:
+            if c not in seen:
+                seen.add(c)
+                closure(c, seen)
+        return seen
+
+    memo = {}
+
+    def level(i, stack=()):
+        if i in stack:
+            return 0
+        if i not in memo:
+            memo[i] = 1 + max([level(d, stack + (i,)) for d in ts[i]["deps"] if d in ts], default=-1)
+        return memo[i]
+
+    for i, t in ts.items():
+        t["dependents"] = len([c for c in closure(i) if ts[c]["status"] not in CLOSED])
+        t["level"] = level(i)
+        t["stale"] = is_stale(t)
+        t["ready"] = (t["status"] == "todo" or t["stale"]) and not t["hold"] and all(
+            d in ts and ts[d]["status"] == "done" for d in t["deps"])
+        t["orphaned"] = [d for d in t["deps"] if t["status"] not in CLOSED and ts.get(d, {}).get("status") == "dropped"]
+    return ts
+
+
+def assumptions(t):
+    """[(when, who, text)] recorded with `tasks.py assume`."""
+    return ASSUMPTION.findall(t["body"])
+
+
+def problems(ts):
+    out = []
+    for t in ts.values():
+        if t["status"] not in STATUSES:
+            out.append(f"{t['id']}: bad status '{t['status']}'")
+        if t["status"] == "in_progress" and not t["owner"]:
+            out.append(f"{t['id']}: in_progress without owner")
+        if t["lease_until"] and lease_end(t) is None:
+            out.append(f"{t['id']}: bad lease_until '{t['lease_until']}' (want {LEASE_FMT})")
+        for d in t["deps"]:
+            if d not in ts:
+                out.append(f"{t['id']}: unknown dependency '{d}'")
+            elif ts[d]["status"] == "dropped" and t["status"] not in CLOSED:
+                out.append(f"{t['id']}: depends on dropped '{d}': edit its deps, drop it too, or undrop {d}")
+    color = {}
+
+    def dfs(i, path):
+        color[i] = 1
+        for d in ts[i]["deps"]:
+            if d not in ts:
+                continue
+            if color.get(d) == 1:
+                out.append("cycle: " + " -> ".join(path + [i, d]))
+            elif d not in color:
+                dfs(d, path + [i])
+        color[i] = 2
+    for i in ts:
+        if i not in color:
+            dfs(i, [])
+    return out
+
+
+def ranked(ts):
+    r = [t for t in ts.values() if t["ready"]]
+    return sorted(r, key=lambda t: (-t["dependents"], t["prio"], t["id"]))
+
+
+# ---------- git ----------
+def git(*a, check=True, env=None):
+    p = subprocess.run(["git", "-C", str(ROOT), *a], capture_output=True, text=True, env=env)
+    if check and p.returncode:
+        sys.exit(f"git {' '.join(a)} failed:\n{p.stderr.strip()}")
+    return p
+
+
+def upstream():
+    p = git("rev-parse", "--abbrev-ref", "@{u}", check=False)
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+CONFLICT_HELP = """Your work is safe. Follow AGENTS.md "Merge conflicts":
+  a. obvious fix: edit the files, `git add` them, `git rebase --continue` (or `git commit` for a merge)
+  b. many conflicts: `git rebase --abort`, then `git merge origin/main` (resolve once, not per commit)
+  c. unclear: `python tasks.py redo <id>` (saves this attempt, restarts from main; use it as a reference)
+  d. the tasks disagree on design: `python tasks.py release <id> --note "..."` after (c)"""
+
+
+def merge_state():
+    """'rebase' / 'merge' if one is unfinished in ROOT (usually conflicts), else None."""
+    for op, marker in (("rebase", "rebase-merge"), ("rebase", "rebase-apply"), ("merge", "MERGE_HEAD")):
+        if (ROOT / git("rev-parse", "--git-path", marker).stdout.strip()).exists():
+            return op
+    return None
+
+
+def conflicted():
+    return git("diff", "--name-only", "--diff-filter=U", check=False).stdout.split()
+
+
+def no_unfinished_merge():
+    op = merge_state()
+    if op:
+        sys.exit(f"CONFLICT: a {op} is in progress (unresolved: {' '.join(conflicted()) or 'none'}); "
+                 f"finish or abort it first.\n{CONFLICT_HELP}")
+
+
+def sync():
+    no_unfinished_merge()
+    if upstream() and git("pull", "--rebase", "--autostash", check=False).returncode:
+        if merge_state():
+            sys.exit(f"CONFLICT while catching up with main in: {' '.join(conflicted())}\n{CONFLICT_HELP}")
+        git("pull", "--rebase", "--autostash")  # not a conflict: fail with git's own message
+
+
+def check_cmd():
+    """The project's validation command: $TASK_CHECK, else the first line of .taskcheck, else None."""
+    if os.environ.get("TASK_CHECK"):
+        return os.environ["TASK_CHECK"]
+    f = ROOT / ".taskcheck"
+    lines = [l.strip() for l in f.read_text().splitlines() if l.strip() and not l.startswith("#")] if f.exists() else []
+    return lines[0] if lines else None
+
+
+def run_check(cmd):
+    """Run .taskcheck in sh on every OS (on Windows: Git for Windows' bash), so one command line works
+    for the whole team."""
+    argv = ["/bin/sh", "-c", cmd]
+    if os.name == "nt":
+        git_root = Path(git("--exec-path").stdout.strip()).parents[2]  # <Git>/mingw64/libexec/git-core
+        bash = [b for b in (git_root / "bin" / "bash.exe", git_root / "usr" / "bin" / "bash.exe") if b.exists()]
+        argv = [str(bash[0]), "-c", cmd] if bash else ["cmd", "/c", cmd]
+    return subprocess.run(argv, cwd=ROOT, capture_output=True, text=True)
+
+
+def dirty():
+    return git("status", "--porcelain", "--untracked-files=no").stdout.strip()
+
+
+def code_changed(since):
+    """True if anything outside tasks/ changed between commit `since` and HEAD (heartbeats don't count)."""
+    return git("diff", "--quiet", since, "HEAD", "--", ".", ":(exclude)tasks", check=False).returncode != 0
+
+
+def me():
+    return (os.environ.get("TASK_OWNER") or git("config", "user.name", check=False).stdout.strip()
+            or "unknown")
+
+
+def remote():
+    u = upstream()
+    return u.split("/", 1)[0] if u else None
+
+
+def publish(paths, msg):
+    """Commit the working-tree state of `paths` (task files) directly on top of the upstream branch and
+    push only that commit, so a status change never carries unfinished local commits to main (only `done`
+    pushes code, after the check). Local commits are then replayed on top of it. Returns False if the push
+    lost a race. Either way the files are back as HEAD has them, so the caller can re-read and retry."""
+    up = upstream()
+    r, branch = up.split("/", 1)
+    base = git("rev-parse", up).stdout.strip()
+    rels = [Path(p).resolve().relative_to(ROOT).as_posix() for p in paths]
+    index = ROOT / git("rev-parse", "--git-path", "taskflow-index").stdout.strip()
+    env = {**os.environ, "GIT_INDEX_FILE": str(index)}  # a private index: the agent's staged work stays
+    try:
+        git("read-tree", base, env=env)
+        for rel in rels:
+            if (ROOT / rel).exists():
+                blob = git("hash-object", "-w", "--", rel).stdout.strip()
+                git("update-index", "--add", "--cacheinfo", f"100644,{blob},{rel}", env=env)
+            else:
+                git("update-index", "--force-remove", "--", rel, env=env)
+        tree = git("write-tree", env=env).stdout.strip()
+    finally:
+        index.unlink(missing_ok=True)
+    new = git("commit-tree", tree, "-p", base, "-m", msg).stdout.strip()
+    pushed = git("push", "-q", r, f"{new}:refs/heads/{branch}", check=False).returncode == 0
+    tracked = set(git("ls-tree", "-r", "--name-only", "HEAD", "--", *rels).stdout.split())
+    if tracked:
+        git("checkout", "HEAD", "--", *sorted(tracked))
+    for rel in rels:
+        if rel not in tracked:
+            (ROOT / rel).unlink(missing_ok=True)
+    if not pushed:
+        return False
+    git("update-ref", f"refs/remotes/{up}", new)
+    if git("rebase", "-q", "--autostash", "--onto", new, base, check=False).returncode:
+        git("rebase", "--abort", check=False)
+        print(f"warning: could not replay your local commits on top of {up}: run `git pull --rebase`",
+              file=sys.stderr)
+    return True
+
+
+def update(tid, msg, guard, append=None, extra=None, with_code=False, **fields):
+    """Compare-and-swap on one task file. Pull, let guard(t) veto (returns an error string) on the
+    freshest state, commit the field change, push. The push only succeeds if nobody pushed in between;
+    if it is rejected, drop our commit and start over, so the guard always judges the winner's state.
+    `append` is a line added to the end of the file (the Notes section). `extra(t)` may write more files
+    (returns their paths) that go into the same commit. Only the task files are pushed, never local code
+    commits, unless `with_code` (done, after the check). Returns (task, error)."""
+    for _ in range(5):
+        sync()
+        ts = analyze(load())
+        if tid not in ts:
+            sys.exit(f"no such task: {tid}")
+        t = ts[tid]
+        err = guard(t)
+        if err:
+            return t, err
+        m = msg(t) if callable(msg) else msg
+        set_fields(t, **fields)
+        if append:
+            write(t["path"], t["path"].read_text().rstrip("\n") + f"\n{append}\n")
+        paths = [str(t["path"]), *map(str, extra(t) if extra else [])]
+        if not git("status", "--porcelain", "--", *paths).stdout.strip():
+            return t, None
+        if upstream() and not with_code:
+            if publish(paths, m):
+                return t, None
+            continue  # lost the push race: re-read, re-judge
+        git("add", *paths)
+        git("commit", "-m", m, "--", *paths)
+        if not upstream() or git("push", check=False).returncode == 0:
+            return t, None
+        git("reset", "--keep", "HEAD~1")  # lost the push race: forget our commit, re-read, re-judge
+    sys.exit("could not push after 5 attempts (network/auth problem?)")
+
+
+def owned_by_me(t):
+    if t["status"] != "in_progress" or t["owner"] != me():
+        return f"{t['id']} is {t['status']} (owner: {t['owner'] or '-'}), not owned by {me()}"
+    return None
+
+
+def frozen(ref=None):
+    """The freeze reason, or None. With ref: as on that commit (the dashboard reads origin/main)."""
+    if ref:
+        p = git("show", f"{ref}:tasks/{FREEZE}", check=False)
+        return (p.stdout.strip() or "frozen") if p.returncode == 0 else None
+    f = DIR / FREEZE
+    return (f.read_text().strip() or "frozen") if f.exists() else None
+
+
+def set_frozen(reason):
+    """Create (reason) or remove (None) tasks/FROZEN in one pushed commit, retrying lost push races."""
+    f = DIR / FREEZE
+    for _ in range(5):
+        sync()
+        if (reason is None) == (not f.exists()):
+            return False
+        if reason is None:
+            f.unlink()
+        else:
+            write(f, reason + "\n")
+        m = f"{'freeze' if reason else 'unfreeze'}: board by {me()}"
+        if not upstream():
+            git("add", "-A", "--", str(f))
+            git("commit", "-qm", m, "--", str(f))
+            return True
+        if publish([str(f)], m):
+            return True
+    sys.exit("could not push after 5 attempts (network/auth problem?)")
+
+
+def wip_branch(tid):
+    return f"wip/{tid}"
+
+
+def attempts(tid):
+    """Saved earlier attempts of a task (by `redo`), oldest first."""
+    r = remote()
+    out = (git("ls-remote", "--heads", r, f"{wip_branch(tid)}-attempt*", check=False).stdout if r
+           else git("branch", "--list", "--format=refs/heads/%(refname:short)", f"{wip_branch(tid)}-attempt*").stdout)
+    names = [l.split("refs/heads/", 1)[1] for l in out.splitlines() if "refs/heads/" in l]
+    return sorted(names, key=lambda n: int(n.rsplit("attempt", 1)[1] or 0))
+
+
+# ---------- commands ----------
+def cmd_new(a):
+    DIR.mkdir(exist_ok=True)
+    p = DIR / f"{a.id}.md"
+    if p.exists():
+        sys.exit("exists")
+    write(p, f"---\ntitle: {a.title}\nstatus: todo\nowner:\ndeps: [{a.deps}]\nprio: {a.prio}\n---\n"
+                 "## Goal\n\n## Acceptance criteria\n- [ ] \n\n## Notes\n")
+    print(f"created {p.relative_to(ROOT)}")
+
+
+def cmd_list(a):
+    ts = analyze(load())
+    print(f"{'ID':24} {'STATUS':12} {'OWNER':20} {'UNBLOCKS':8} READY  TITLE")
+    for t in sorted(ts.values(), key=lambda t: (t["level"], -t["dependents"], t["id"])):
+        if a.status and t["status"] != a.status:
+            continue
+        st = "HOLD" if t["hold"] else "stale" if t["stale"] else t["status"]
+        print(f"{t['id']:24} {st:12} {t['owner'][:20]:20} {t['dependents']:<8} "
+              f"{'yes' if t['ready'] else '-':6} {t['title']}")
+
+
+def cmd_next(a):
+    sync()
+    if frozen():
+        return print(f"FROZEN: {frozen()}\nThe board is frozen while humans change the plan: claim nothing new. "
+                     "Finish a task you already own; otherwise stop.")
+    r = ranked(analyze(load()))
+    if not r:
+        print("no ready tasks (all claimed, done, or blocked)")
+    for t in r[:a.n]:
+        stale = f"  (stale: takeover from {t['owner']})" if t["stale"] else ""
+        print(f"{t['id']:24} unblocks {t['dependents']:<3} prio {t['prio']}  {t['title']}{stale}")
+
+
+def cmd_claim(a):
+    sync()
+    if frozen() and not a.force:
+        sys.exit(f"FROZEN: {frozen()}\nThe board is frozen while humans change the plan: claim nothing new, "
+                 "stop. (Humans: --force claims anyway.)")
+    ts = analyze(load())
+    tid = a.id or (ranked(ts)[0]["id"] if ranked(ts) else None)
+    if not tid or tid not in ts:
+        sys.exit("no such / no ready task")
+    who = a.who or me()
+    prev = {}
+
+    def guard(t):
+        if t["status"] == "dropped":
+            return f"{tid} was dropped (the plan changed): pick another task: python tasks.py next"
+        if t["status"] != "todo" and not t["stale"]:
+            return (f"LOST RACE: {tid} is already {t['status']} (owner: {t['owner']}). "
+                    "Pick another task: python tasks.py next")
+        if t["hold"] and not a.force:
+            return f"{tid} is on hold: {t['hold']}"
+        if not t["ready"] and not a.force:
+            return f"{tid} has unfinished dependencies: {[d for d in t['deps'] if ts.get(d, {}).get('status') != 'done']}"
+        prev["owner"] = t["owner"] if t["stale"] else ""
+        return None
+
+    lease = int(os.environ.get("TASK_LEASE", "0") or 0)
+    t, err = update(tid, lambda t: f"claim: {tid} by {who}" + (f" (takeover from {prev['owner']})" if prev["owner"] else ""),
+                    guard, status="in_progress", owner=who, lease_until=new_lease(lease) if lease else "")
+    if err:
+        sys.exit(err)
+    print(f"CLAIMED {tid} as {who}" + (f" (took over from {prev['owner']}, whose lease expired)" if prev["owner"] else ""))
+    r = remote()
+    if r and git("ls-remote", "--exit-code", "--heads", r, wip_branch(tid), check=False).returncode == 0:
+        print(f"\nEarlier unfinished work for this task is on {r}/{wip_branch(tid)}. Start from it:\n"
+              f"  git fetch {r} && git merge {r}/{wip_branch(tid)}")
+    for b in attempts(tid):
+        print(f"\nAbandoned earlier attempt (reference only, do not merge): git diff HEAD...{r or ''}{'/' if r else ''}{b}")
+    print(f"\n{t['path'].read_text()}")
+
+
+def cmd_done(a):
+    """Catch up with main, run the project check on the merged result, then mark done and push.
+    If main moved (code, not just task files) while the check ran, check again."""
+    no_unfinished_merge()
+    if dirty():
+        sys.exit("REFUSED: uncommitted changes. Commit your work first (it is pushed with `done`).")
+    cmd = None if a.skip_check else check_cmd()
+    if not cmd and not a.skip_check:
+        print("warning: no check configured (.taskcheck or TASK_CHECK); marking done without testing the merge")
+    for _ in range(3):
+        sync()
+        tested = git("rev-parse", "HEAD").stdout.strip()
+        if cmd:
+            print(f"checking merged result: {cmd}", flush=True)
+            p = run_check(cmd)
+            if p.returncode:
+                tail = "\n".join((p.stdout + p.stderr).strip().splitlines()[-40:])
+                sys.exit(f"{tail}\n\nREFUSED: `{cmd}` fails on your work merged with the latest main "
+                         f"(exit {p.returncode}). Fix it (another task may have changed what you depend on), "
+                         f"commit, and run done again. If you cannot, see AGENTS.md \"Merge conflicts\" (c)/(d).")
+
+        def guard(t):
+            err = None if a.force else owned_by_me(t)
+            return err or ("RETEST" if cmd and code_changed(tested) else None)
+        t, err = update(a.id, f"done: {a.id} by {me()}", guard, with_code=True, status="done", lease_until="")
+        if err != "RETEST":
+            break
+        print("main changed while checking; checking again")
+    else:
+        sys.exit("main keeps changing; run done again")
+    if err:
+        sys.exit(f"REFUSED: {err}. The task is no longer yours: stop working on it.")
+    if remote():  # the backup is on main now; abandoned attempts (wip/<id>-attemptN) are kept as history
+        git("push", "-q", remote(), "--delete", wip_branch(a.id), check=False)
+    print(f"DONE {a.id}")
+
+
+def cmd_redo(a):
+    """Give up on merging this attempt: save it to wip/<id>-attemptN, reset to the latest main, keep the
+    task. The saved attempt is a reference for re-implementing, not something to merge."""
+    ts = load()
+    if a.id not in ts:
+        sys.exit(f"no such task: {a.id}")
+    if owned_by_me(ts[a.id]):
+        sys.exit(f"REFUSED: {owned_by_me(ts[a.id])}")
+    op = merge_state()
+    if op:
+        git(op, "--abort")
+        print(f"aborted the unfinished {op}")
+    if git("status", "--porcelain").stdout.strip():
+        git("add", "-A")
+        git("commit", "-qm", f"redo {a.id}: snapshot of abandoned attempt")
+    base = upstream() or "HEAD"
+    if upstream():
+        git("fetch", "-q")
+    if git("rev-list", "--count", f"{base}..HEAD").stdout.strip() == "0":
+        sys.exit("nothing to redo: no local work beyond main")
+    n = 1 + max([int(b.rsplit("attempt", 1)[1]) for b in attempts(a.id)], default=0)
+    if n + 1 >= MAX_ATTEMPTS:
+        print(f"{a.id} has had {n} attempts: putting it on hold for a human instead of attempt {n + 1}")
+    b = f"{wip_branch(a.id)}-attempt{n}"
+    git("branch", "-f", b, "HEAD")
+    if remote():
+        git("push", "-q", "-f", remote(), f"{b}:refs/heads/{b}")
+        git("push", "-q", remote(), "--delete", wip_branch(a.id), check=False)  # the conflicting backup
+    git("reset", "-q", "--hard", base)
+    update(a.id, f"redo: {a.id} attempt {n + 1} by {me()}", owned_by_me, attempts=n + 1)  # for the board
+    ref = f"{remote()}/{b}" if remote() else b
+    if n + 1 >= MAX_ATTEMPTS:
+        give_back(a.id, "hold", f"{n} attempts saved ({wip_branch(a.id)}-attempt1..{n}), none mergeable",
+                  count=False, hold=f"{n} failed attempts: needs a human decision")
+        sys.exit(f"ON HOLD {a.id}: {n} attempts failed. Stop working on it.")
+    print(f"REDO {a.id}: attempt saved as {ref}; your clone is now at the latest main and you still own the task.\n"
+          f"Re-implement the task here. Use the old attempt as a reference, don't merge it:\n"
+          f"  git diff HEAD...{ref}   # what the attempt changed\n"
+          f"  git show {ref}:<path>   # one file as the attempt had it\n"
+          f"  git checkout {ref} -- <test files>   # its tests often carry over unchanged")
+
+
+MAX_RELEASES, MAX_ATTEMPTS = 3, 4  # beyond this a task goes on hold for a human instead of bouncing on
+
+
+def save_work(tid):
+    """Move unpushed commits to wip/<tid> (never main) before giving a task back."""
+    sync()
+    ts = load()
+    if tid not in ts:
+        sys.exit(f"no such task: {tid}")
+    ahead = git("rev-list", "--count", "@{u}..HEAD", check=False).stdout.strip() if upstream() else ""
+    if ahead in ("0", ""):
+        return ts
+    if owned_by_me(ts[tid]):
+        sys.exit(f"REFUSED: you have {ahead} unpushed commit(s) and {tid} is not your task; "
+                 "push or move them first, or they would land on main with the release.")
+    if dirty():
+        sys.exit(f"REFUSED: commit your changes first; they will be saved to {wip_branch(tid)}, not main.")
+    git("push", "-q", "-f", remote(), f"HEAD:refs/heads/{wip_branch(tid)}")
+    git("reset", "-q", "--keep", "@{u}")
+    print(f"saved {ahead} unfinished commit(s) to {remote()}/{wip_branch(tid)} (not main)")
+    return ts
+
+
+def give_back(tid, verb, note, force=False, count=True, extra=None, **fields):
+    """Release a task (status todo, no owner) with a note. Counts releases: the MAX_RELEASES-th puts
+    the task on hold, so a task nobody can finish stops bouncing between agents."""
+    save_work(tid)
+    held = {}
+
+    def fields_for(t):
+        n = t["releases"] + (1 if count else 0)
+        auto = count and not fields.get("hold") and n >= MAX_RELEASES
+        held["auto"] = auto
+        return dict(fields, releases=n, **({"hold": f"given back {n} times; last: {note}"[:200]} if auto else {}))
+
+    def guard(t):
+        err = None if force else owned_by_me(t)
+        if not err:
+            set_fields(t, **fields_for(t))
+        return err
+    t, err = update(tid, f"{verb}: {tid} by {me()}", guard, append=f"- {verb} by {me()}: {note}" if note else None,
+                    extra=extra, status="todo", owner="", lease_until="", extended="")
+    if err:
+        sys.exit(f"REFUSED: {err}. Use --force for someone else's task.")
+    if held.get("auto"):
+        print(f"ON HOLD {tid}: given back {MAX_RELEASES} times, a human has to look at it (tasks.py unhold)")
+    return t
+
+
+def cmd_release(a):
+    give_back(a.id, "release", a.note, force=a.force, count=not a.handoff)
+    print(f"RELEASED {a.id}")
+
+
+def cmd_hold(a):
+    """Stop agents from working on a task until a human has looked at it (`unhold`)."""
+    ts = load()
+    if a.id in ts and ts[a.id]["status"] == "todo":  # not claimed: just mark it
+        _, err = update(a.id, f"hold: {a.id} by {me()}", lambda t: None, append=f"- hold by {me()}: {a.reason}",
+                        hold=a.reason[:200])
+    else:
+        give_back(a.id, "hold", a.reason, force=a.force, count=False, hold=a.reason[:200])
+    print(f"ON HOLD {a.id}: {a.reason}")
+
+
+def cmd_unhold(a):
+    _, err = update(a.id, f"unhold: {a.id} by {me()}", lambda t: None if t["hold"] else f"{a.id} is not on hold",
+                    append=f"- unhold by {me()}: {a.note}" if a.note else None, hold="", releases=0, extended="")
+    if err:
+        sys.exit(err)
+    print(f"UNHELD {a.id}: agents can pick it up again")
+
+
+def cmd_extend(a):
+    """One more session for a task that is nearly done (once per agent and task)."""
+    def guard(t):
+        return owned_by_me(t) or (f"REFUSED: {a.id} was extended for you already: split it or put it on hold"
+                                  if t["extended"] == me() else None)
+    _, err = update(a.id, f"extend: {a.id} by {me()}", guard, append=f"- extended by {me()}: {a.note}", extended=me())
+    if err:
+        sys.exit(err)
+    print(f"EXTENDED {a.id}: one more session")
+
+
+def parse_split(text):
+    """Sections '## <id>: <title>' with an optional 'deps: a, b' line; the rest is the task body."""
+    subs = []
+    for block in re.split(r"^## ", text, flags=re.M)[1:]:
+        head, _, body = block.partition("\n")
+        m = re.match(r"\s*([a-z0-9][a-z0-9-]*)\s*:\s*(.+)", head)
+        if not m:
+            sys.exit(f"bad section header '## {head}': want '## <id>: <title>' (id: a-z, 0-9, -)")
+        deps = re.search(r"^deps:\s*(.*)$", body, re.M)
+        body = re.sub(r"^deps:.*\n?", "", body, flags=re.M).strip()
+        subs.append(dict(id=m.group(1), title=m.group(2).strip(), body=body,
+                         deps=[d.strip() for d in deps.group(1).split(",") if d.strip()] if deps else []))
+    return subs
+
+
+def cmd_split(a):
+    """Replace a too-big task by subtasks (one commit): the original waits for them and then only
+    integrates and verifies. The work so far is saved to wip/<id> for the subtasks."""
+    if not Path(a.file).is_file():
+        sys.exit(f"no such file: {a.file}")
+    subs = parse_split(Path(a.file).read_text(encoding="utf-8"))
+    if not 2 <= len(subs) <= 6:
+        sys.exit("split into 2-6 subtasks (sections '## <id>: <title>' in the file)")
+    ids = [s["id"] for s in subs]
+    ts = load()
+    if a.id not in ts:
+        sys.exit(f"no such task: {a.id}")
+    if ts[a.id]["parent"]:
+        sys.exit(f"REFUSED: {a.id} is already a subtask of {ts[a.id]['parent']}: don't split further, "
+                 f"put it on hold: python tasks.py hold {a.id} \"<why>\"")
+    clash = [i for i in ids if i in ts or ids.count(i) > 1]
+    if clash:
+        sys.exit(f"task ids already exist or repeat: {clash}")
+    bad = [d for s in subs for d in s["deps"] if d not in ids and d not in ts]
+    if bad:
+        sys.exit(f"unknown deps: {bad}")
+
+    def create(t):
+        paths = []
+        for s in subs:
+            p = DIR / f"{s['id']}.md"
+            deps = ", ".join(t["deps"] + s["deps"])
+            goal, _, crit = s["body"].partition("- [")  # checklist lines become the acceptance criteria
+            crit = f"\n## Acceptance criteria\n- [{crit.rstrip()}\n" if crit else ""
+            write(p, f"---\ntitle: {s['title']}\nstatus: todo\nowner:\ndeps: [{deps}]\nprio: {t['prio']}\n"
+                     f"parent: {a.id}\n---\n## Goal\nPart of `{a.id}` ({t['title']}), which was split.\n"
+                     f"{goal.strip()}\n{crit}\n## Notes\n- Work done on `{a.id}` before the split is on "
+                     f"`origin/{wip_branch(a.id)}` (if it exists): merge it first if your part builds on it.\n")
+            paths.append(p)
+        return paths
+    note = (f"into {', '.join(ids)}. {a.note or ''} Once they are done, this task is only integration: "
+            f"merge what is left on {wip_branch(a.id)} (if anything), verify the acceptance criteria end to end, done.")
+    give_back(a.id, "split", " ".join(note.split()), count=False, extra=create,
+              deps=f"[{', '.join(ts[a.id]['deps'] + ids)}]", subtasks=", ".join(ids))
+    print(f"SPLIT {a.id} into {', '.join(ids)}. {a.id} now waits for them; whoever claims it then "
+          f"integrates and verifies its acceptance criteria.")
+
+
+def cmd_drop(a):
+    """The plan changed and the task is no longer wanted. An agent working on it stops at its next
+    heartbeat (within ~5 min); its work so far stays on wip/<id>. Reversible with `undrop`."""
+    ts = load()
+    if a.id not in ts:
+        sys.exit(f"no such task: {a.id}")
+    if ts[a.id]["status"] == "in_progress" and ts[a.id]["owner"] == me():
+        save_work(a.id)  # my unpushed commits go to wip/<id>, not main
+
+    def guard(t):
+        if t["status"] == "done":
+            return (f"REFUSED: {a.id} is done: its code is on main already. Add a task that removes or "
+                    "changes it (python tasks.py new ...)")
+        if t["status"] == "dropped":
+            return f"{a.id} is dropped already"
+        if t["status"] == "in_progress" and t["owner"] != me() and not t["stale"] and not a.force:
+            return (f"REFUSED: {a.id} is in progress (owner: {t['owner']}). --force drops it anyway: that "
+                    f"agent stops within ~5 min, its work stays on {wip_branch(a.id)}")
+        return None
+    _, err = update(a.id, f"drop: {a.id} by {me()}", guard, append=f"- dropped by {me()}: {a.note}",
+                    status="dropped", owner="", lease_until="", hold="", extended="")
+    if err:
+        sys.exit(err)
+    print(f"DROPPED {a.id}")
+    orphans = [t["id"] for t in analyze(load()).values() if a.id in t["orphaned"]]
+    if orphans:
+        print(f"These tasks depend on {a.id} and now wait for a human: {', '.join(orphans)}\n"
+              f"Edit their deps (or drop them too), commit and push, then check: python tasks.py check")
+
+
+def cmd_undrop(a):
+    _, err = update(a.id, f"undrop: {a.id} by {me()}",
+                    lambda t: None if t["status"] == "dropped" else f"{a.id} is {t['status']}, not dropped",
+                    append=f"- undropped by {me()}: {a.note}" if a.note else None, status="todo", releases=0)
+    if err:
+        sys.exit(err)
+    print(f"UNDROPPED {a.id}: back on the board; earlier work (if any) is on {wip_branch(a.id)}")
+
+
+def cmd_freeze(a):
+    """Stop all new claims while humans change the plan. Running tasks carry on (hold/drop --force
+    stops them); nothing else changes."""
+    print(f"FROZEN: {a.reason}" if set_frozen(a.reason[:300]) else f"already frozen: {frozen()}")
+    busy = [f"{t['id']}[{t['owner']}]" for t in load().values() if t["status"] == "in_progress"]
+    if busy:
+        print(f"still running (they finish unless you hold/drop them with --force): {', '.join(busy)}")
+
+
+def cmd_unfreeze(a):
+    print("UNFROZEN: agents claim tasks again" if set_frozen(None) else "not frozen")
+
+
+def cmd_assume(a):
+    """Record a decision taken without a human, so humans can review it later (`assumptions`)."""
+    when = time.strftime("%Y-%m-%d %H:%M%z")
+    text = " ".join(a.text.split())
+    _, err = update(a.id, f"assume: {a.id} by {me()}", lambda t: None,
+                    append=f"- ASSUMPTION ({when} by {me()}): {text}")
+    if err:
+        sys.exit(err)
+    print(f"RECORDED assumption on {a.id}")
+
+
+def cmd_assumptions(a):
+    """All recorded assumptions, newest first, for humans to review."""
+    if a.pull:
+        sync()
+    rows = sorted(((w, i, who, txt) for i, t in load().items() for w, who, txt in assumptions(t)), reverse=True)
+    for w, i, who, txt in rows:
+        print(f"{w}  {i:24} {who}\n    {txt}")
+    print(f"{len(rows)} assumption(s)" + ("; to revise one, edit or add a task" if rows else ""))
+
+
+def cmd_heartbeat(a):
+    """Renew the lease on every in_progress task I own (plus any ids given, to learn if I lost them).
+    Prints one line per task: HEARTBEAT <id> <until> | DONE <id> | LOST <id> <why>."""
+    sync()
+    who, ts = me(), analyze(load())
+    lease = int(os.environ.get("TASK_LEASE", "0") or 0) or DEFAULT_LEASE
+    ids = set(a.ids) | {i for i, t in ts.items() if t["status"] == "in_progress" and t["owner"] == who}
+    for i in sorted(ids):
+        if i not in ts:
+            print(f"LOST {i} no such task")
+            continue
+        until = new_lease(lease)
+        t, err = update(i, f"heartbeat: {i} by {who}", owned_by_me, lease_until=until)
+        if not err:
+            print(f"HEARTBEAT {i} {until}")
+        elif t["status"] == "done" and t["owner"] == who:
+            print(f"DONE {i}")
+        else:
+            print(f"LOST {i} {err}")
+
+
+def cmd_check(a):
+    ps = problems(load())
+    print("\n".join(ps) or "ok")
+    sys.exit(1 if ps else 0)
+
+
+def cmd_graph(a):
+    if a.pull:
+        sync()
+    ts = analyze(load())
+    # Mermaid (renders on GitHub / GitLab)
+    md = ["# Task board", "", "```mermaid", "graph LR"]
+    for t in ts.values():
+        who = f"<br/>@{t['owner']}" if t["owner"] else ""
+        md.append(f'  {t["id"].replace("-", "_")}["{t["title"]}{who}"]:::{t["status"]}')
+    for t in ts.values():
+        for d in t["deps"]:
+            if d in ts:
+                md.append(f'  {d.replace("-", "_")} --> {t["id"].replace("-", "_")}')
+    md += [f"  classDef todo fill:{COLORS['todo']}", f"  classDef in_progress fill:{COLORS['in_progress']}",
+           f"  classDef done fill:{COLORS['done']}", f"  classDef dropped fill:{COLORS['dropped']}", "```", "",
+           "| Task | Status | Owner | Unblocks | Ready |", "|---|---|---|---|---|"]
+    for t in sorted(ts.values(), key=lambda t: (-t["dependents"], t["id"])):
+        md.append(f"| {t['id']} | {t['status']} | {t['owner']} | {t['dependents']} | {'yes' if t['ready'] else ''} |")
+    (ROOT / "BOARD.md").write_text("\n".join(md) + "\n")
+    board().write(sys.modules[__name__], ROOT / "board.html", "HEAD", ts=ts)
+    print("wrote BOARD.md and board.html")
+
+
+def board():
+    return companion("board")
+
+
+def companion(name):
+    """Import board.py / repos.py from next to this file."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    sys.dont_write_bytecode = True
+    try:
+        return __import__(name)
+    except ImportError:
+        sys.exit(f"{name}.py not found next to tasks.py: copy it from taskflow")
+
+
+def cmd_repos(a):
+    companion("repos").main(sys.modules[__name__], a)
+
+
+def cmd_watch(a):
+    """Live dashboard from origin: fetch every N seconds, rewrite board.html. Never touches your
+    working tree or branch, so it is safe to run in any clone, even one you are working in."""
+    b, me_ = board(), sys.modules[__name__]
+    ref = upstream() or "HEAD"
+    out = ROOT / "board.html"
+    print(f"watching {ref}: open {out.as_uri()} in a browser (Ctrl-C to stop)")
+    while True:
+        if ref != "HEAD":
+            git("fetch", "-q", "--prune", remote(), check=False)
+        ts = b.write(me_, out, ref, refresh=None if a.once else a.interval)
+        n = {k: sum(1 for t in ts.values() if t["status"] == k) for k in STATUSES}
+        print(f"\r[{time.strftime('%H:%M:%S')}] done {n['done']}/{len(ts)}, in progress {n['in_progress']}, "
+              f"stale {sum(t['stale'] for t in ts.values())}   ", end="", flush=True)
+        if a.once:
+            return print()
+        time.sleep(a.interval)
+
+
+def cmd_status(a):
+    ts = analyze(load())
+    for k in STATUSES:
+        items = [t for t in ts.values() if t["status"] == k]
+        print(f"{k} ({len(items)}): " + ", ".join(f"{t['id']}" + (f"[{t['owner']}]" if t["owner"] else "")
+                                                   + (" STALE" if t["stale"] else "")
+                                                   + (" HOLD" if t["hold"] else "") for t in items))
+    if frozen():
+        print(f"\nFROZEN (no new claims): {frozen()}   (python tasks.py unfreeze)")
+    held = [t for t in ts.values() if t["hold"]]
+    orphans = [t for t in ts.values() if t["orphaned"]]
+    if held or orphans:
+        print("\nneeds a human:\n" + "\n".join(
+            [f"  {t['id']}: {t['hold']}   (python tasks.py unhold {t['id']})" for t in held] +
+            [f"  {t['id']}: depends on dropped {', '.join(t['orphaned'])}   (edit its deps, or drop it)" for t in orphans]))
+    n = sum(len(assumptions(t)) for t in ts.values())
+    if n:
+        print(f"\n{n} assumption(s) to review: python tasks.py assumptions")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = p.add_subparsers(dest="cmd", required=True)
+    s = sp.add_parser("new"); s.add_argument("id"); s.add_argument("title")
+    s.add_argument("--deps", default=""); s.add_argument("--prio", type=int, default=2); s.set_defaults(f=cmd_new)
+    s = sp.add_parser("list"); s.add_argument("--status"); s.set_defaults(f=cmd_list)
+    s = sp.add_parser("next"); s.add_argument("-n", type=int, default=5); s.set_defaults(f=cmd_next)
+    s = sp.add_parser("claim"); s.add_argument("id", nargs="?"); s.add_argument("--who")
+    s.add_argument("--force", action="store_true"); s.set_defaults(f=cmd_claim)
+    for n, f in (("done", cmd_done), ("release", cmd_release)):
+        s = sp.add_parser(n); s.add_argument("id"); s.add_argument("--force", action="store_true"); s.set_defaults(f=f)
+        if n == "done":
+            s.add_argument("--skip-check", action="store_true", help="don't run the project check")
+        if n == "release":
+            s.add_argument("--note", help="why: appended to the task's Notes section")
+            s.add_argument("--handoff", action="store_true", help="not the task's fault (e.g. usage limit): "
+                           "doesn't count towards putting it on hold")
+    s = sp.add_parser("redo"); s.add_argument("id"); s.set_defaults(f=cmd_redo)
+    s = sp.add_parser("hold", help="stop agents working on a task until a human looks at it")
+    s.add_argument("id"); s.add_argument("reason"); s.add_argument("--force", action="store_true"); s.set_defaults(f=cmd_hold)
+    s = sp.add_parser("unhold"); s.add_argument("id"); s.add_argument("--note"); s.set_defaults(f=cmd_unhold)
+    s = sp.add_parser("extend", help="one more session for a nearly finished task (once)")
+    s.add_argument("id"); s.add_argument("--note", required=True); s.set_defaults(f=cmd_extend)
+    s = sp.add_parser("split", help="replace a too-big task by subtasks described in a file")
+    s.add_argument("id"); s.add_argument("--from", dest="file", required=True); s.add_argument("--note")
+    s.set_defaults(f=cmd_split)
+    s = sp.add_parser("drop", help="the plan changed: remove a task from the board (stops its agent with --force)")
+    s.add_argument("id"); s.add_argument("--note", required=True); s.add_argument("--force", action="store_true")
+    s.set_defaults(f=cmd_drop)
+    s = sp.add_parser("undrop"); s.add_argument("id"); s.add_argument("--note"); s.set_defaults(f=cmd_undrop)
+    s = sp.add_parser("freeze", help="no new claims until unfreeze (while humans change the plan)")
+    s.add_argument("reason"); s.set_defaults(f=cmd_freeze)
+    sp.add_parser("unfreeze").set_defaults(f=cmd_unfreeze)
+    s = sp.add_parser("assume", help="record an assumption taken without a human, for later review")
+    s.add_argument("id"); s.add_argument("text"); s.set_defaults(f=cmd_assume)
+    s = sp.add_parser("assumptions", help="list recorded assumptions, newest first")
+    s.add_argument("--pull", action="store_true"); s.set_defaults(f=cmd_assumptions)
+    s = sp.add_parser("heartbeat"); s.add_argument("ids", nargs="*"); s.set_defaults(f=cmd_heartbeat)
+    sp.add_parser("check").set_defaults(f=cmd_check)
+    sp.add_parser("status").set_defaults(f=cmd_status)
+    s = sp.add_parser("graph"); s.add_argument("--pull", action="store_true"); s.set_defaults(f=cmd_graph)
+    s = sp.add_parser("repos", help="sync folders with the original repos (see repos.py)")
+    s.add_argument("action", choices=["add", "list", "pull", "sync", "push"]); s.add_argument("args", nargs="*")
+    s.add_argument("--branch", default="main"); s.add_argument("--every", help="repeat, e.g. 30m")
+    s.add_argument("--skip-check", action="store_true"); s.set_defaults(f=cmd_repos)
+    s = sp.add_parser("watch"); s.add_argument("-n", "--interval", type=int, default=20)
+    s.add_argument("--once", action="store_true", help="write board.html once and exit"); s.set_defaults(f=cmd_watch)
+    a = p.parse_args()
+    a.f(a)
+
+
+if __name__ == "__main__":
+    main()

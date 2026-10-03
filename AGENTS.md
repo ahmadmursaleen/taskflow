@@ -1,0 +1,87 @@
+# Task protocol (read first)
+
+Work is tracked in `tasks/*.md`, one file per task. Git is the only source of truth. Never edit the
+`status`/`owner` fields by hand; use `python tasks.py`.
+
+1. `python tasks.py next` - ready tasks, most-blocking first. Prefer the top one.
+2. `python tasks.py claim <id>` - atomic. If it prints `LOST RACE`, go back to step 1.
+   Do not start work before you see `CLAIMED`. If it says earlier unfinished work exists on
+   `origin/wip/<id>` (its previous owner died or released it), merge that first and continue from it.
+3. Implement only what the task's acceptance criteria say. Commit code often (the agent runner backs up
+   your commits to `wip/<id>`) and run `git pull --rebase` every few commits, so conflicts with other
+   agents show up early and small. Never `git push` to main yourself: `done` pushes your work once it
+   passes the check, so main only ever holds finished tasks (it is published to the original repos).
+4. `python tasks.py done <id>` when all criteria are met. It merges the latest main, runs the project
+   check (`.taskcheck`) on the merged result, and only then marks the task done and pushes. If the
+   check fails, fix it and run `done` again. Then go to step 1.
+5. Stuck or abandoning? Commit your work, then `python tasks.py release <id> --note "<what is done, what blocks>"`.
+   Your unfinished commits go to `wip/<id>` for the next owner, not to main.
+6. Missing task discovered? `python tasks.py new <id> "<title>" --deps a,b`, commit, push.
+7. If any command prints `REFUSED` or `LOST`, the task was taken over by someone else (your lease
+   expired) or a human changed the plan (dropped it or put it on hold): stop working on it immediately.
+8. If `next` or `claim` prints `FROZEN`, humans are changing the plan: finish a task you already own,
+   but claim nothing new. Stop.
+
+## Assumptions
+Humans may be asleep: don't wait for answers and don't stop because something is unclear. Choose the most
+reasonable option that fits the spec, then record it right away:
+`python tasks.py assume <id> "<what you assumed, and why>"`. One line per decision a human might want
+to revisit (a guessed requirement, a library choice, a behavior the spec doesn't define, a shortcut you
+took). Humans review them with `python tasks.py assumptions`. Keep working as if the assumption were true.
+
+## Merge conflicts
+Other agents change main while you work, so `git pull --rebase` (or `done`) can stop with CONFLICT.
+Your work is never lost. Take the first step that fits:
+
+a. **Obvious fix** (imports, both sides added lines, formatting, a rename): resolve, `git add`,
+   `git rebase --continue`. Being sure isn't enough: the resolution only counts if the check passes,
+   which `done` verifies.
+b. **Many conflicts** (the same ones again for each commit): `git rebase --abort`, then
+   `git merge origin/main`: you resolve once for the whole task instead of once per commit.
+c. **Not obvious** (you'd have to guess what the other change meant, or the check keeps failing after
+   merging): `python tasks.py redo <id>`. It saves your attempt as `wip/<id>-attemptN`, resets your
+   clone to the latest main, and you keep the task. Re-implement it on top of the new code, using the
+   old attempt as a reference (`git diff HEAD...origin/wip/<id>-attemptN`): reuse its design and
+   tests, but don't merge it.
+d. **The tasks disagree on design** (e.g. both changed the API contract differently): that is a spec
+   problem, not a git problem. Run `redo` (c), then `python tasks.py release <id> --note "conflicts with
+   <other task>: <what>"`, and add a task to reconcile them if one is missing.
+
+A clean merge can still break things (another task renamed what you call). That's why `done` runs
+the check after merging.
+
+## Too big or stuck
+A task should take 30-90 min. The runner gives each agent 2 sessions per task, then asks for a review.
+You can also decide this earlier, as soon as you see it:
+- **Nearly done:** `python tasks.py extend <id> --note "<what is left>"` (one more session, once).
+- **Too big:** write the remaining work as 2-6 subtasks into a file, then
+  `python tasks.py split <id> --from <file> --note "<what is done so far>"`. File format:
+  ```
+  ## auth-login: Login endpoint
+  deps: auth-model
+  Goal: POST /login returns a JWT for valid credentials.
+  - [ ] endpoint + tests
+  - [ ] wrong password -> 401
+  ## auth-model: User model and password hashing
+  - [ ] ...
+  ```
+  Ids: a-z, 0-9, `-`. The optional `deps:` line may name other subtasks or existing tasks. Your
+  committed work goes to `wip/<id>` for the subtasks. The original task then waits for them; whoever
+  claims it afterwards only integrates and verifies its acceptance criteria. Subtasks can't be split
+  again: put them on hold instead.
+- **Stuck** (unclear requirement, missing dependency, a decision is needed, the check fails for reasons
+  outside your task): `python tasks.py hold <id> "<what a human must decide or do>"`. Agents won't
+  pick it up until a human runs `python tasks.py unhold <id>`.
+
+## Several repos
+If `repos.txt` exists, folders such as `backend/` and `frontend/` are other repos imported into this
+one. Just work in the folders: a change touching several of them is one commit, and `tasks.py repos
+sync` publishes each folder to its repo. Don't edit `repos.txt`, don't run `git subtree`, don't push
+to those repos directly.
+
+Humans change the plan with `drop`/`undrop` (a task is no longer wanted) and `freeze`/`unfreeze` (no new
+claims while they replan). Agents don't use these.
+
+Other commands: `list`, `status`, `check` (validates deps/cycles), `graph` (writes BOARD.md + board.html),
+`heartbeat` (renews your leases; the agent runner does this for you), `redo` (see Merge conflicts),
+`extend` / `split` / `hold` (see Too big or stuck).

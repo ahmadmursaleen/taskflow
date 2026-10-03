@@ -1,0 +1,38 @@
+# Keep the original repos up to date from this working repo: `tasks.py repos sync` every 30 min.
+# Copy into the working repo as .gitlab-ci.yml (or `include:` it).
+#
+# One-time setup in GitLab:
+#  1. A token that can push to this working repo AND every original repo (scope write_repository,
+#     role Developer+ or whatever their protected main requires): a group access token if they share a
+#     group, otherwise a personal access token of someone who is a member of all of them.
+#     Add it here as CI/CD variable SYNC_TOKEN (masked, protected).
+#  2. Build > Pipeline schedules: "*/30 * * * *" on main. "Run pipeline" on main = sync now.
+#  3. Settings > Repository > Protected branches: protect main only. wip/*, status/* and sync-status
+#     are force-pushed by taskflow and must stay unprotected.
+#  4. If .taskcheck needs tools (node, make, a JDK...), install them in before_script below: the sync
+#     only publishes states that pass the check.
+
+sync-repos:
+  image: python:3.12-slim
+  resource_group: repo-sync           # never two syncs at once
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+  variables:
+    GIT_DEPTH: 0                      # subtree split needs the full history
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git >/dev/null
+    - '[ -x "$(git --exec-path)/git-subtree" ] || install -m755 /usr/share/doc/git/contrib/subtree/git-subtree.sh "$(git --exec-path)/git-subtree"'
+    - git config --global user.name "repo-sync"
+    - git config --global user.email "repo-sync@${CI_SERVER_HOST}"
+    # authenticate every push to this GitLab with the token, whichever URL form repos.txt uses
+    - git config --global url."https://oauth2:${SYNC_TOKEN}@${CI_SERVER_HOST}/".insteadOf "git@${CI_SERVER_HOST}:"
+    - git config --global --add url."https://oauth2:${SYNC_TOKEN}@${CI_SERVER_HOST}/".insteadOf "https://${CI_SERVER_HOST}/"
+    - git remote set-url origin "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git fetch -q origin
+    - git checkout -q -B "$CI_DEFAULT_BRANCH" "origin/$CI_DEFAULT_BRANCH"
+    - git branch -q -u "origin/$CI_DEFAULT_BRANCH"
+    # tools for .taskcheck, e.g.:
+    # - apt-get install -y -qq make nodejs npm >/dev/null
+  script:
+    - python3 tasks.py repos sync
