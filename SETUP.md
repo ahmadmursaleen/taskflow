@@ -29,7 +29,22 @@ takes a few hours, most of it in phases C and D. Don't start phase D before I ap
    It also applies to Claude in your own clone: from now on you push, Claude commits. Once agents run,
    they push to main every minute, so push with a retry loop:
    `for i in 1 2 3 4 5 6; do git pull -q --rebase && git push && break; sleep 3; done`.
+6. Install the Taskflow quality sub-agents into the working repo:
 
+   ```sh
+   mkdir -p .claude/agents
+   cp taskflow/templates/claude-agents/code-reviewer.md .claude/agents/code-reviewer.md
+   cp taskflow/templates/claude-agents/test-writer.md .claude/agents/test-writer.md
+   cp taskflow/templates/claude-agents/fixer.md .claude/agents/fixer.md
+   ```
+
+   These are helper sub-agents used inside the lifecycle of a claimed Taskflow task.
+
+   They must not claim, release, hold, complete, or otherwise manipulate Taskflow tasks. They must not push, change branches, launch additional Taskflow workers, or wait for human input.
+
+   Verify that all three files exist under `.claude/agents/` before continuing.
+7. Ensure the official `frontend-design` plugin is available in Claude Code. Install or enable Anthropic's official Frontend Design plugin for the Claude account used by the autonomous workers. 
+   Verify that the plugin is available in Claude Code before starting the dry run. Frontend Design is used only for tasks involving user-facing frontend or UI implementation. It must not be treated as a requirement for backend-only, infrastructure, documentation, or other non-visual tasks. If the plugin is unavailable, report it during setup rather than blocking Taskflow itself.
 ## B. Understand the code (30–60 min)
 1. Read `backend/` and `frontend/`. Write `docs/ARCHITECTURE.md`: stack, an "Install" section for
    Linux/macOS/Windows (teammates' agents run the tests on their laptops), how to run and test each part,

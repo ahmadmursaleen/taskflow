@@ -21,6 +21,70 @@ Work is tracked in `tasks/*.md`, one file per task. Git is the only source of tr
    expired) or a human changed the plan (dropped it or put it on hold): stop working on it immediately.
 8. If `next` or `claim` prints `FROZEN`, humans are changing the plan: finish a task you already own,
    but claim nothing new. Stop.
+## Quality gate before completing implementation tasks
+
+For implementation tasks, the parent Taskflow worker owns the task from claim through completion.
+
+Before running `tasks.py done`, the parent worker must complete this quality workflow:
+
+1. Finish the implementation for the claimed task.
+2. Invoke the `test-writer` sub-agent to:
+    - inspect the task acceptance criteria and changed behavior;
+    - add or improve relevant tests;
+    - run focused tests and broader validation where practical;
+    - report any production bugs it finds.
+3. Invoke the `code-reviewer` sub-agent to:
+    - review the implementation against the current task acceptance criteria;
+    - check applicable project architecture, integration, security, tests, and maintainability;
+    - report only validated, evidence-based findings.
+4. If the test-writer or code-reviewer reports valid issues, invoke the `fixer` sub-agent to resolve them.
+5. Re-run relevant tests after fixes.
+6. If material fixes were made, re-run `code-reviewer` when useful to confirm the issues are resolved.
+7. Run `.taskcheck`.
+8. Only when required behavior is implemented, important findings are resolved, and `.taskcheck` passes may the parent worker run `tasks.py done`.
+
+### Quality sub-agent boundaries
+
+`test-writer`, `code-reviewer`, and `fixer` are helper sub-agents within the current claimed task.
+
+They are not Taskflow workers and must not:
+
+- claim, release, hold, unhold, drop, or complete Taskflow tasks;
+- run `tasks.py done`;
+- push;
+- change branches;
+- merge or rebase;
+- launch additional Taskflow workers;
+- wait for human input.
+
+If a quality sub-agent cannot proceed, it must return the reason to the parent worker.
+
+The parent Taskflow worker remains responsible for:
+
+- Taskflow task state;
+- assumptions;
+- holds;
+- releases;
+- deciding whether a finding is in scope;
+- running final validation;
+- completing the task.
+
+#### Frontend implementation
+
+For tasks that create or materially change a user-facing frontend or interface, use the available `frontend-design` plugin/skill when applicable.
+
+Use it to establish and implement the visual direction of the interface before or during frontend implementation.
+
+Do not invoke it for:
+
+- backend-only tasks;
+- infrastructure tasks;
+- database-only tasks;
+- documentation-only tasks;
+- non-visual refactoring;
+- tasks where the current design must remain unchanged.
+
+The current task acceptance criteria, `SPEC.md`, and `docs/ARCHITECTURE.md` remain authoritative. Frontend Design may improve presentation and implementation quality, but it must not invent product requirements or expand the task scope.
 
 ## Assumptions
 Humans may be asleep: don't wait for answers and don't stop because something is unclear. Choose the most
