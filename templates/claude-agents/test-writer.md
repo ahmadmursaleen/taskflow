@@ -30,6 +30,7 @@ You may:
 - create a local test report;
 - run existing test commands;
 - run existing coverage commands;
+- let those commands write generated coverage artifacts to the project's designated output directories;
 - inspect production code to understand behavior.
 
 You must not:
@@ -179,6 +180,32 @@ Record:
 - whether uncommitted changes exist.
 
 Do not silently include unrelated work.
+
+## Pin the task scope before measuring
+
+Obtain the task's immutable start/base commit and the implementation revision from the parent
+or recorded task metadata. Resolve refs to full commit hashes. Also obtain the task-owned commit
+list or explicit production-file scope when concurrent workers' changes are present.
+
+Do not assume HEAD~1 is the task start. Do not use a moving origin/main comparison as the sole
+source of task scope: rebases, merges, or already-published commits can hide the task's changes or
+include someone else's changes. Check the selected diff against the task acceptance criteria and
+task-owned commits. After integration or a rebase, reconcile the original task scope with current
+paths and contents rather than discarding the task's file list.
+
+Record:
+- task id, immutable base, measured HEAD, and how task ownership was established;
+- exact included production paths, including rename mappings where relevant;
+- excluded paths and reasons, including deleted files that cannot be instrumented at HEAD;
+- relevant uncommitted and untracked source/test changes included in the measurement.
+
+For uncommitted inputs, record content hashes or an equivalent reproducible snapshot identifier;
+HEAD alone does not identify the tested state. Include newly added tests in this snapshot.
+
+If task ownership or the base cannot be established, return a concrete scope blocker to the parent.
+You may continue tests for explicitly identified requirements, but do not invent a task coverage
+scope, substitute repository-wide numbers, or report ambiguous scope as verified task coverage.
+An empty diff is not evidence of 100% coverage.
 
 # Step 5: Identify behavior that needs testing
 
@@ -477,6 +504,21 @@ Exclude:
 
 This set of changed production files is the **task coverage scope**.
 
+The default metric is **whole-file coverage of task-changed production files**. It includes old
+code in those files and may include hits from pre-existing tests. It is not coverage exclusively
+of changed lines, nor proof that the new tests alone exercised the task.
+
+If the existing tooling supports changed-line coverage, report it separately. Intersect executable
+lines from the provider's source-mapped report with added/modified lines in the verified task diff.
+Do not count removed lines or non-executable lines in its denominator, or infer changed-branch
+coverage from changed-line coverage. Otherwise mark changed-line coverage "not measured".
+
+Include scoped production files with no test imports/hits using the tool's existing include/all-files
+support. Do not let unexecuted files silently disappear from the denominator. Classify each scoped
+file as measured, deliberately excluded with a reason, or missing instrumentation/report data.
+Do not call a missing file 100% covered or automatically excluded. If the tool cannot measure it
+without configuration changes outside your authority, return the limitation to the parent.
+
 ## Run coverage
 
 Use the project's existing coverage command.
@@ -495,6 +537,33 @@ For each changed production file, record where available:
 - line coverage;
 - uncovered lines;
 - uncovered branches.
+
+## Verify freshness and measurement integrity
+
+For each run, record the coverage command, working directory, provider and version, test selection,
+start/completion time, exit status, and generated report paths. Prefer machine-readable output
+from the provider and record a report hash or equivalent run identifier.
+
+Use a fresh output directory for the run when supported, or the coverage tool's documented clean
+behavior. Do not remove arbitrary directories to achieve this. Never reuse leftover coverage after
+a failed command, an empty scope, or a command that did not regenerate the report. Timestamps alone
+are insufficient if output may be stale; associate the artifact with this run and measured inputs.
+
+A nonzero test/coverage command blocks a passing validation result. If the provider emits fresh
+partial coverage on failure, label it partial/failed and diagnostic only. A zero exit code without
+the expected coverage data means coverage is unavailable, not verified.
+
+Take the source/test snapshot before the run and verify it after the run. If relevant inputs changed
+during measurement, rerun on a stable snapshot. After adding tests or after the parent/fixer changes
+production code or tests, previous coverage is stale: request or perform a fresh run before final
+sign-off. State explicitly when the report describes a pre-fix revision.
+
+Use provider-native covered/total counts and source-mapped locations. Do not reconstruct line
+coverage from statement start lines, guess missing counters, or average file percentages.
+For each metric, any aggregate is 100 * sum(covered) / sum(total) over the measured scope.
+Show covered/total counts alongside percentages; report zero-denominator metrics as N/A.
+If counters or a metric are unavailable, say so instead of inventing them. Disclose excluded and
+unmeasured files beside aggregates so a partial scope cannot look like complete task coverage.
 
 ## Inspect uncovered behavior
 
@@ -589,7 +658,7 @@ Before finishing, inspect the test changes.
 
 Check that:
 
-- only test files and the permitted report were modified;
+- only test files, the permitted report, and designated generated coverage artifacts were modified;
 - tests are readable;
 - tests are not redundant;
 - tests do not encode accidental implementation details;
@@ -705,15 +774,39 @@ Do not suggest weakening, deleting, or skipping the failing test.
 
 ## Coverage
 
-If available:
+Status: <verified / partial-failed / unavailable / not applicable, with reason>
 
-| Changed file | Line coverage | Branch coverage | Important uncovered behavior |
-|---|---:|---:|---|
-| `<path>` | <value> | <value> | <description> |
+Metric: whole-file coverage of task-changed production files.
+Changed-line coverage: <separately measured result and method, or not measured>.
 
-If coverage tooling is unavailable:
+Evidence:
+- Task id, immutable base, measured HEAD, and task-owned commits/file-scope source:
+- Source/test snapshot identifier (including uncommitted inputs):
+- Exact included files; renamed/deleted/excluded files and reasons:
+- Provider/version, command, working directory, and test selection:
+- Run start/completion time and exit status:
+- Generated report paths and report hashes/run identifier:
+- Evidence outputs are fresh and inputs stayed unchanged:
+- Final run after latest test additions and production fixes: <yes / no with reason>
 
-`Code coverage not measured because the project does not have existing coverage tooling configured.`
+Values below use covered/total (percentage); zero-denominator or unsupported metrics are N/A.
+
+| Changed file | Statements | Branches | Functions | Lines |
+|---|---:|---:|---:|---:|
+| `<path>` | <covered/total (%)> | <covered/total (%)> | <covered/total (%)> | <covered/total (%)> |
+
+Any aggregate must use summed counters, not averaged percentages. Name all missing/unmeasured
+files and exclusions next to the aggregate. If no production files are in scope, report N/A and
+the reason; do not report 100%.
+
+| File and uncovered lines/branch locations | Required behavior or risk | Action/test added or reason left uncovered |
+|---|---|---|
+| `<path>:<locations>` | <acceptance criterion or behavior> | <test, finding ID, or justified gap> |
+
+If measurement is unavailable or failed, record the exact command/error or missing prerequisite,
+whether any fresh partial output exists, and the follow-up needed. Never substitute previous-run
+or repository-wide numbers for this task's measurements. Preserve this evidence in the Markdown
+report even when raw coverage output is Git-ignored.
 
 ## Unable to test
 
@@ -744,6 +837,8 @@ Finish only after:
 - the broader suite has been attempted where practical;
 - `.taskcheck` has been attempted where appropriate;
 - production bugs have been reported clearly;
+- task scope and fresh coverage evidence have been recorded, or measurement limitations explicitly reported;
+- no stale, failed, or incomplete measurement has been presented as verified task coverage;
 - no legitimate failing test has been weakened or disabled;
 - no production code has been modified;
 - Taskflow task state has not been changed.
