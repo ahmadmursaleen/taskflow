@@ -442,35 +442,146 @@ Do not declare success based only on the new tests.
 
 Existing tests matter too.
 
-# Step 11: Measure coverage when available
+# Step 11: Measure task-scoped coverage
 
-Only use coverage tooling that is already configured.
+Only use coverage tooling that is already configured for the project.
 
 Do not:
 
-- add coverage tooling;
+- install coverage tooling;
 - modify coverage configuration;
-- change thresholds;
-- install plugins;
+- change coverage thresholds;
+- install coverage plugins;
 
-unless explicitly instructed.
+unless explicitly instructed by the parent worker.
 
-If coverage is configured:
+Coverage tooling is expected to be configured during project setup.
 
-1. run the project's existing coverage command;
-2. inspect coverage for changed source files;
-3. identify materially untested branches or paths;
-4. decide whether those paths represent meaningful behavior;
-5. add tests where useful;
-6. rerun coverage if needed.
+## Determine the task coverage scope
 
-Coverage is evidence, not the objective.
+Coverage must be evaluated for the current Taskflow task, not primarily for the whole repository.
 
-Do not add meaningless tests solely to increase percentages.
+From the Git scope resolved earlier, identify production files that were:
 
-If the project defines coverage thresholds, report against them.
+- added by the current task;
+- materially modified by the current task.
 
-If no threshold exists, report the numbers without inventing a mandatory target.
+Exclude:
+
+- test files;
+- documentation;
+- generated files;
+- build output;
+- configuration-only files unless they contain executable behavior;
+- unrelated pre-existing production files.
+
+This set of changed production files is the **task coverage scope**.
+
+## Run coverage
+
+Use the project's existing coverage command.
+
+Run the smallest appropriate coverage command that exercises the current task.
+
+If the coverage tool supports restricting coverage to changed files, modules, or packages, use that capability.
+
+If the coverage tool generates repository-wide coverage, read the full report but evaluate and report coverage only for files in the task coverage scope.
+
+For each changed production file, record where available:
+
+- statement coverage;
+- branch coverage;
+- function coverage;
+- line coverage;
+- uncovered lines;
+- uncovered branches.
+
+## Inspect uncovered behavior
+
+Do not treat the percentage alone as the finding.
+
+For every materially uncovered line or branch, inspect the production code and determine what behavior it represents.
+
+Classify uncovered behavior as one of:
+
+### Meaningful missing test
+
+Examples:
+
+- an acceptance criterion;
+- a boundary condition;
+- an error path;
+- an important state transition;
+- security-relevant behavior;
+- regression-prone behavior;
+- API or integration behavior required by the task.
+
+For these cases:
+
+1. add the appropriate test;
+2. run the test;
+3. rerun coverage;
+4. record the result.
+
+### Production defect discovered by testing
+
+If a newly added or existing legitimate test fails because production behavior violates the requirements:
+
+- do not modify production code;
+- do not weaken, delete, or skip the test;
+- keep the failing test;
+- record the issue under `Bugs found`;
+- clearly mark it as requiring a production fix by the parent worker / fixer.
+
+The test report must contain enough information for the fixer to reproduce and resolve the issue:
+
+- failing test name;
+- affected production file;
+- expected behavior;
+- actual behavior;
+- relevant acceptance criterion or requirement;
+- severity.
+
+### Non-material coverage gap
+
+Examples may include:
+
+- trivial bootstrap code;
+- defensive code that is not meaningfully reachable in the current task;
+- generated integration glue;
+- code outside the current task's responsibility.
+
+Do not add meaningless tests solely to raise the percentage.
+
+Record significant remaining gaps in the report and explain why no test was added.
+
+## Coverage thresholds
+
+If the project defines task-level coverage targets in `AGENTS.md` or `docs/ARCHITECTURE.md`, report against those targets.
+
+If no threshold exists:
+
+- report the measured values;
+- do not invent a mandatory percentage;
+- do not fail a task solely because coverage is numerically low.
+
+A legitimate failing requirement test blocks completion regardless of the coverage percentage.
+
+Important required behavior that remains untested should be reported as a quality issue regardless of the overall percentage.
+
+## Coverage loop
+
+Use this workflow:
+
+1. measure coverage for changed production files;
+2. inspect meaningful uncovered behavior;
+3. add missing tests;
+4. run those tests;
+5. if tests expose production defects, report them for the fixer;
+6. rerun coverage after adding tests;
+7. stop when meaningful task behavior is sufficiently tested or remaining gaps are explicitly justified.
+
+Do not repeatedly add tests merely to chase a percentage.
 
 # Step 12: Inspect the final test diff
 
@@ -554,29 +665,43 @@ Result:
 
 ## Bugs found
 
-For each bug:
+For each production defect discovered by testing:
 
 ### <bug title>
 
+Finding ID:
+
+`TW-<number>`
+
 Test:
 
-`<test name>`
+`<failing test name>`
 
-Source:
+Production source:
 
 `<file>:<line if known>`
 
 Requirement:
 
-<expected behavior>
+<acceptance criterion or expected behavior>
+
+Expected behavior:
+
+<what should happen>
 
 Actual behavior:
 
-<observed behavior>
+<what happened>
 
 Severity:
 
 <High / Medium / Low>
+
+Fix required:
+
+`Yes — production code must be fixed by the parent worker / fixer.`
+
+Do not suggest weakening, deleting, or skipping the failing test.
 
 ## Coverage
 
@@ -603,7 +728,9 @@ List:
 State one of:
 
 - Tests added and all validation passed.
-- Tests added; production bugs were discovered and remain for the parent agent to fix.
+- Tests and task-scoped coverage are sufficient; no production defects found.
+- Tests added; production defects were discovered and must be passed to the `fixer` before task completion.
+- Meaningful task behavior remains untested and requires follow-up.
 - Testing is blocked by missing infrastructure or unresolved requirements.
 - No additional tests were necessary for the reviewed scope.
 

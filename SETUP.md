@@ -54,7 +54,31 @@ takes a few hours, most of it in phases C and D. Don't start phase D before I ap
    are missing on Windows, so prefer e.g. `npm run check` or a small script. Run it and fix it until
    it passes on a clean clone. Everything the check needs (JDK, Node version, Docker...) goes into the
    "Install" section and TEAM.md: an agent whose check can't run puts its task on hold.
-3. Add a short "Project notes" section to AGENTS.md: how to run, how to test, and the code
+3. Configure code coverage for the project's test stack.
+   Detect the test framework already chosen for the project and use its standard coverage tooling.
+   For greenfield projects, install and configure the appropriate coverage package as part of the initial test setup.
+   
+   Examples:
+      - Vitest: `@vitest/coverage-v8`
+      - Jest: use Jest's existing coverage support
+      - pytest: `pytest-cov`
+      - Gradle/JVM: JaCoCo
+      - other stacks: use the standard coverage tooling already associated with the chosen test framework
+   
+   Do not introduce a second test framework solely for coverage.
+   Coverage must run non-interactively so headless Taskflow workers can use it.
+   Add a coverage command to the project's normal scripts or build configuration and document it in `docs/ARCHITECTURE.md`.
+   
+   Also document:
+      - the coverage command;
+      - the coverage provider/tool;
+      - where reports are written;
+      - how the test-writer should obtain coverage for production files changed by the current Taskflow task.
+   
+   Prefer machine-readable coverage output when supported.
+   Do not enforce a repository-wide percentage unless the project explicitly requires one.
+   Coverage is primarily used by the `test-writer` to identify meaningful untested behavior in code changed by the current task.
+4. Add a short "Project notes" section to AGENTS.md: how to run, how to test, and the code
    conventions every agent must follow.
 
 ## C. Agree on what to build (1–2 h, the important part)
