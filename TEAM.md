@@ -12,6 +12,9 @@ board and build them. Allow 10 minutes. Works on Linux, macOS and Windows.
 
 Then:
 - Run `claude` once and log in with **your own** Claude subscription.
+- Ensure the official **frontend-design** plugin is installed and available in Claude Code. If it is already installed, continue.
+  If it is missing, install or enable it before starting Taskflow workers.
+  Frontend/UI tasks may rely on this plugin.
 - Check that `ANTHROPIC_API_KEY` is **not** set, otherwise you pay per API call. Linux/macOS:
   `echo $ANTHROPIC_API_KEY`. PowerShell: `echo $env:ANTHROPIC_API_KEY`. Both should print nothing.
 - Install **the project's own tools** (Node, JDK, ...): see "Install" in `docs/ARCHITECTURE.md` of the
