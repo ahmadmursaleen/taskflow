@@ -1,0 +1,30 @@
+<section id="lease" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Mechanics · leases</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">A crashed laptop can't block the board</h2>
+</div>
+<div data-build="items" style="display:flex;align-items:stretch">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px 0 0 16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C">claim</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Lease starts</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">The claim records lease_until, 20 min ahead.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;border-left:none;padding:40px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C">heartbeat</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Lease renewed</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">The runner renews it while the agent is alive.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#E7E2D6;border:1px solid #DDD8CC;border-left:none;padding:40px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C">silence</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Lease expires</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">The task is stale and can be claimed again.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#161B26;color:#F3F0E8;padding:40px;border-radius:0 16px 16px 0">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F08A4B">takeover</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">New owner</h3>
+<p style="font-size:28px;color:#C9D0DC;line-height:1.4">Starts from wip/&lt;id&gt;, not from zero.</p>
+</div>
+</div>
+<p data-build="self" style="font-size:32px;color:#4A5160;line-height:1.4;width:1500px">The old owner's next command prints <b>LOST</b>, and it stops. Human claims never expire.</p>
+<aside>Agents die: laptops close, sessions hit limits, networks drop. So a claim is a lease, the same idea as a visibility timeout in a message queue. The runner renews it with a heartbeat. If it lapses, the task is stale and anyone may take it over. The new owner doesn't start from scratch: the runner has been backing up the old owner's commits to a wip branch. And if the old owner comes back to life, the tool tells it it lost the task, so you never get two owners writing.</aside>
+</section>

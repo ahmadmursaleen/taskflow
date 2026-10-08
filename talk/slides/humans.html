@@ -1,0 +1,23 @@
+<section id="humans" data-transition="fade" style="background:#161B26;color:#F3F0E8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F08A4B;text-transform:uppercase;letter-spacing:2px">When workers are LLMs · 3</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">"Humans may be asleep. Don't wait for answers."</h2>
+</div>
+<div data-build="items" style="display:flex;gap:64px;flex:1">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:40px;font-weight:600;color:#F08A4B">Agents decide and record</h3>
+<p style="font-size:32px;color:#C9D0DC;line-height:1.4">Pick the most reasonable option, then log it:</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E6E2D8;background:#222A39;padding:32px;border-radius:12px;line-height:1.5">tasks.py assume &lt;id&gt; "Used bcrypt; spec names no hash"</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:40px;font-weight:600;color:#F08A4B">Humans steer, not assign</h3>
+<table data-build="items coal" style="font-size:30px;color:#C9D0DC">
+<tr><td style="width:40%;font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">assumptions</td><td style="width:60%">Review decisions later</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">unhold</td><td>Answer a parked question</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">freeze</td><td>No new claims while replanning</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">drop</td><td>This is no longer wanted</td></tr>
+</table>
+</div>
+</div>
+<aside>This line is straight from the agent rules. Agents should never block on a human. When something is unclear, they choose the most reasonable option and record it as an assumption, one line per decision a human might want to revisit. Humans then review assumptions in batch, answer held questions, freeze the board while replanning, or drop work that is no longer wanted. The human role shifts from assigning work to shaping the graph and auditing decisions. I haven't seen this treated as a first-class concept elsewhere.</aside>
+</section>

@@ -1,0 +1,31 @@
+<section id="prior" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Where this sits</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Old mechanics, new workers</h2>
+</div>
+<div data-build="items" style="display:flex;gap:48px;flex:1">
+<div style="flex:1.15;display:flex;flex-direction:column;gap:24px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Borrowed, decades old</h3>
+<table style="font-size:26px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:42%;text-align:left">Here</th><th style="width:58%;text-align:left">Prior art</th></tr>
+<tr><td>claim by push</td><td>Tuple spaces, compare-and-swap</td></tr>
+<tr style="background:#FBF9F4"><td>lease, heartbeat</td><td>Leases (1989), queue timeouts</td></tr>
+<tr><td>pull when free</td><td>Kanban, bag-of-tasks</td></tr>
+<tr style="background:#FBF9F4"><td>board in the repo</td><td>Stigmergy, blackboard systems</td></tr>
+<tr><td>skill matching</td><td>Contract Net (1980), runner labels</td></tr>
+</table>
+<p style="font-size:24px;color:#4A5160;line-height:1.4">Recent relatives: git-backed issue trackers for coding agents, parallel-agent projects that claim work via lock files in git.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#161B26;color:#F3F0E8;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600;color:#F08A4B">New because workers are LLMs</h3>
+<ul data-build="items coal" style="font-size:30px;line-height:1.5;color:#C9D0DC">
+<li>Handing over reasoning, not just results</li>
+<li>Workers that rewrite the plan</li>
+<li>Humans governing asynchronously</li>
+<li>Conflicts treated as spec signals</li>
+<li>Matching tasks to model strength</li>
+</ul>
+</div>
+</div>
+<aside>To be honest about novelty: every mechanism on the left is decades old. Tuple spaces, leases, Kanban, blackboard systems, the Contract Net protocol for capability-based allocation, CI runners that pull jobs by label. And several groups are building git-native boards for coding agents right now. What is genuinely new is on the right: what you need once the workers are LLMs. That's where the open problems are, and where I'd like your ideas. [Add specific references you want to cite here.]</aside>
+</section>

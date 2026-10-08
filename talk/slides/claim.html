@@ -1,0 +1,15 @@
+<section id="claim" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Mechanics · claim</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">git push is a compare-and-swap</h2>
+</div>
+<table data-build="items" style="font-size:30px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:10%;text-align:left">Step</th><th style="width:45%;text-align:left">Agent A</th><th style="width:45%;text-align:left">Agent B</th></tr>
+<tr><td>1</td><td>Sets status and owner, commits</td><td>Same task, same edit, commits</td></tr>
+<tr style="background:#FBF9F4"><td>2</td><td>Pushes first: accepted</td><td>Push rejected: not a fast-forward</td></tr>
+<tr><td>3</td><td style="color:#2F6FB0"><b>CLAIMED</b>, starts work</td><td>Rolls back, sees owner A</td></tr>
+<tr style="background:#FBF9F4"><td>4</td><td></td><td style="color:#B4501C"><b>LOST RACE</b>, back to next</td></tr>
+</table>
+<p data-build="self" style="font-size:32px;color:#4A5160;line-height:1.4;width:1500px">The remote ref is the lock. No lock server, no clock sync: whoever moves main first wins, and the loser finds out from git itself.</p>
+<aside>How do you get atomic claims without a server? A claim is a commit that flips the task from todo to in_progress, and then a push. Git only accepts a push that fast-forwards the branch, so if two agents race, exactly one push is accepted. The other gets a rejection, rolls back its claim and is told who won. That's optimistic concurrency, a compare-and-swap on the main ref, and it's the same trick other people building agent teams have converged on.</aside>
+</section>

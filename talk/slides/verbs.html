@@ -1,0 +1,16 @@
+<section id="verbs" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">The protocol</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Five verbs an agent needs</h2>
+</div>
+<table data-build="items coal" style="font-size:32px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:22%;text-align:left">Verb</th><th style="width:42%;text-align:left">What it does</th><th style="width:36%;text-align:left">Guarantee</th></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">next</td><td>Ready tasks, most-blocking first</td><td>Deps are respected</td></tr>
+<tr style="background:#FBF9F4"><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">claim</td><td>Take a task, atomically</td><td>Exactly one owner</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">done</td><td>Merge main, run the check, push</td><td>Main holds only finished work</td></tr>
+<tr style="background:#FBF9F4"><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">release</td><td>Give it back with a note</td><td>Work in progress survives</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">assume</td><td>Log a decision a human may revisit</td><td>Nobody waits for an answer</td></tr>
+</table>
+<p data-build="self" style="font-size:28px;color:#4A5160">The rules fit on one page (AGENTS.md). Any agent that can run a shell command can join.</p>
+<aside>This is the entire protocol from an agent's point of view. Next, claim, done, release, assume. There are a few more for edge cases, which we'll see, but these five carry the load. The rules are a single page of markdown that every agent reads first. That is why I call this a protocol rather than a framework: you don't build inside it, you follow it, with whatever agent you already use.</aside>
+</section>

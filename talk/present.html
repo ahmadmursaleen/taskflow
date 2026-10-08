@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents Pull the Work</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<style>
+html, body { margin: 0; height: 100%; background: #0d1017; overflow: hidden; cursor: default; }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: center; }
+#stage > section { box-sizing: border-box; position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; }
+#stage > section:not(.on) { display: none !important; }
+section * { margin: 0; box-sizing: border-box; }
+section h1 { line-height: 1.1; } section h2 { line-height: 1.15; } section h3 { line-height: 1.2; }
+section p { line-height: 1.4; }
+section ul, section ol { padding-left: 1.2em; }
+section table { width: 100%; border-collapse: collapse; }
+section th, section td { padding: 0.35em 0.6em; border-bottom: 1px solid rgba(128,128,128,0.35); vertical-align: top; }
+section th { font-weight: 600; }
+x-shape { display: block; flex: none; }
+x-shape[kind="arrow-right"] { clip-path: polygon(0 30%, 60% 30%, 60% 0, 100% 50%, 60% 100%, 60% 70%, 0 70%); }
+x-shape[kind="arrow-left"] { clip-path: polygon(100% 30%, 40% 30%, 40% 0, 0 50%, 40% 100%, 40% 70%, 100% 70%); }
+x-shape[kind="ellipse"] { border-radius: 50%; }
+#count { position: fixed; right: 16px; bottom: 12px; font: 14px system-ui, sans-serif; color: #8a93a3; opacity: 0.6; }
+#notes { position: fixed; left: 0; right: 0; bottom: 0; max-height: 40vh; overflow: auto; display: none;
+  padding: 16px 24px; background: rgba(13,16,23,0.94); color: #e6e2d8; font: 18px/1.5 system-ui, sans-serif; }
+body.notes #notes { display: block; }
+/* builds: hidden until revealed; "coal" dims earlier items of the same list */
+.b-unit { transition: opacity 400ms ease, transform 400ms ease, filter 400ms ease; }
+.b-hidden { opacity: 0 !important; transform: translateY(18px) !important; }
+tr.b-hidden > td, tr.b-hidden > th { border-color: transparent; }  /* collapsed borders don't fade with the row */
+.b-past { opacity: 0.55; filter: grayscale(0.4); }
+.b-instant .b-unit { transition: none; }
+</style></head>
+<body>
+<div id="stage">
+<section id="cover" data-transition="fade" style="background:#161B26;color:#F3F0E8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:space-between">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#F08A4B">$ python tasks.py next</p>
+<div style="display:flex;flex-direction:column;gap:40px">
+<h1 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:160px;font-weight:700;line-height:1.0;letter-spacing:-3px">Agents pull<br>the work</h1>
+<p style="font-size:44px;color:#AEB7C6;line-height:1.3">A git-native protocol for teams of humans and AI agents</p>
+</div>
+<p style="font-size:32px;color:#AEB7C6">[Speaker name] · [Event] · [Date]</p>
+
+</section>
+<section id="shift" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:56px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">The shift</p>
+<h1 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:120px;font-weight:700;line-height:1.05;letter-spacing:-2px">Doing the work is getting cheap.<br><span style="color:#B4501C">Coordinating it is not.</span></h1>
+<p data-build="self" style="font-size:44px;color:#4A5160;line-height:1.3;width:1400px">Ten agents can write code in parallel today. The hard part is making sure they work on the right things, don't collide, and leave something the next one can use.</p>
+
+</section>
+<section id="reflex" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">The usual reflex</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Push vs. pull</h2>
+</div>
+<div data-build="items" style="display:flex;gap:40px;flex:1">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#E7E2D6;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600">Orchestrator pushes</h3>
+<ul data-build="items coal" style="font-size:32px;line-height:1.5;color:#4A5160">
+<li>One agent plans and assigns work</li>
+<li>Must know every worker's capacity and skill</li>
+<li>Single point of failure and bottleneck</li>
+<li>Its context window limits the whole team</li>
+</ul>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#161B26;color:#F3F0E8;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600;color:#F08A4B">Workers pull</h3>
+<ul data-build="items coal" style="font-size:32px;line-height:1.5;color:#C9D0DC">
+<li>Work sits on a shared board</li>
+<li>Whoever has capacity takes the next item</li>
+<li>Add or lose a worker: nothing to reconfigure</li>
+<li>Consistency comes from the board, not a boss</li>
+</ul>
+</div>
+</div>
+
+</section>
+<section id="solved" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Not a new problem</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">We have solved this before</h2>
+</div>
+<div data-build="items" style="display:grid;grid-template-columns:1fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600">Kanban</h3>
+<p style="font-size:32px;color:#4A5160;line-height:1.4">Toyota, 1950s. Pull work when you have capacity; limit work in progress.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600">Open source</h3>
+<p style="font-size:32px;color:#4A5160;line-height:1.4">Strangers pick issues, assign themselves, hand off through pull requests.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600">Stigmergy</h3>
+<p style="font-size:32px;color:#4A5160;line-height:1.4">Ants coordinate by changing their shared environment, not by talking.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600">Tuple spaces</h3>
+<p style="font-size:32px;color:#4A5160;line-height:1.4">Linda, 1985. Workers atomically take a tuple from a shared space.</p>
+</div>
+</div>
+
+</section>
+<section id="idea" data-transition="fade" style="background:#161B26;color:#F3F0E8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:space-between;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F08A4B;text-transform:uppercase;letter-spacing:2px">The idea</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">A shared board in git. Workers pull.<br>Git is the referee.</h2>
+</div>
+<div data-build="items" style="display:flex;align-items:center;gap:24px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#222A39;border:1px solid #3A4458;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600;color:#F08A4B">Agents</h3>
+<p style="font-size:28px;color:#C9D0DC;line-height:1.4">Any model, any laptop, any number. Join or leave at any time.</p>
+</div>
+<div data-build-with="next" style="display:flex;flex-direction:column;align-items:center;gap:8px;width:150px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#AEB7C6">claim</p>
+<x-shape kind="arrow-right" style="background:#F08A4B;width:120px;height:56px"></x-shape>
+<x-shape kind="arrow-left" style="background:#5B6B86;width:120px;height:56px"></x-shape>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#AEB7C6">next</p>
+</div>
+<div style="flex:1.2;display:flex;flex-direction:column;gap:16px;background:#F3F0E8;color:#1A1F2B;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600">Git repo</h3>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#4A5160;line-height:1.5">tasks/*.md<br>code<br>wip/&lt;id&gt; branches</p>
+</div>
+<div data-build-with="next" style="display:flex;flex-direction:column;align-items:center;gap:8px;width:150px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#AEB7C6">review</p>
+<x-shape kind="arrow-left" style="background:#5B6B86;width:120px;height:56px"></x-shape>
+<x-shape kind="arrow-right" style="background:#F08A4B;width:120px;height:56px"></x-shape>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#AEB7C6">steer</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#222A39;border:1px solid #3A4458;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600;color:#F08A4B">Humans</h3>
+<p style="font-size:28px;color:#C9D0DC;line-height:1.4">Set goals, write tasks, review assumptions. May be asleep.</p>
+</div>
+</div>
+<p data-build="self" style="font-size:32px;color:#AEB7C6">No server, no orchestrator, no database. Just a repo everyone can already reach.</p>
+
+</section>
+<section id="taskfile" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">The board</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">A task is a markdown file</h2>
+</div>
+<div style="display:flex;gap:56px;flex:1">
+<div style="flex:1.1;background:#1F2533;padding:48px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.5;color:#E6E2D8">---<br>title: Model-aware picking<br><span style="color:#F08A4B">status: todo</span><br><span style="color:#F08A4B">owner:</span><br>deps: [chore-tier]<br>prio: 2<br>---<br>## Goal<br>Match tasks to models...<br>## Acceptance criteria<br>- [ ] tasks have difficulty 1-4<br>- [ ] failed release raises it</p>
+</div>
+<div data-build="items coal" style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<div style="display:flex;flex-direction:column;gap:8px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Front matter is state</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Only the tool writes <b>status</b> and <b>owner</b>.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">deps form a graph</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">next lists ready tasks, most-blocking first.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Criteria are the contract</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Checkable, 30 to 90 minutes of work, tests included.</p>
+</div>
+</div>
+</div>
+
+</section>
+<section id="verbs" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">The protocol</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Five verbs an agent needs</h2>
+</div>
+<table data-build="items coal" style="font-size:32px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:22%;text-align:left">Verb</th><th style="width:42%;text-align:left">What it does</th><th style="width:36%;text-align:left">Guarantee</th></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">next</td><td>Ready tasks, most-blocking first</td><td>Deps are respected</td></tr>
+<tr style="background:#FBF9F4"><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">claim</td><td>Take a task, atomically</td><td>Exactly one owner</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">done</td><td>Merge main, run the check, push</td><td>Main holds only finished work</td></tr>
+<tr style="background:#FBF9F4"><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">release</td><td>Give it back with a note</td><td>Work in progress survives</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#B4501C">assume</td><td>Log a decision a human may revisit</td><td>Nobody waits for an answer</td></tr>
+</table>
+<p data-build="self" style="font-size:28px;color:#4A5160">The rules fit on one page (AGENTS.md). Any agent that can run a shell command can join.</p>
+
+</section>
+<section id="claim" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Mechanics · claim</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">git push is a compare-and-swap</h2>
+</div>
+<table data-build="items" style="font-size:30px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:10%;text-align:left">Step</th><th style="width:45%;text-align:left">Agent A</th><th style="width:45%;text-align:left">Agent B</th></tr>
+<tr><td>1</td><td>Sets status and owner, commits</td><td>Same task, same edit, commits</td></tr>
+<tr style="background:#FBF9F4"><td>2</td><td>Pushes first: accepted</td><td>Push rejected: not a fast-forward</td></tr>
+<tr><td>3</td><td style="color:#2F6FB0"><b>CLAIMED</b>, starts work</td><td>Rolls back, sees owner A</td></tr>
+<tr style="background:#FBF9F4"><td>4</td><td></td><td style="color:#B4501C"><b>LOST RACE</b>, back to next</td></tr>
+</table>
+<p data-build="self" style="font-size:32px;color:#4A5160;line-height:1.4;width:1500px">The remote ref is the lock. No lock server, no clock sync: whoever moves main first wins, and the loser finds out from git itself.</p>
+
+</section>
+<section id="lease" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Mechanics · leases</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">A crashed laptop can't block the board</h2>
+</div>
+<div data-build="items" style="display:flex;align-items:stretch">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px 0 0 16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C">claim</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Lease starts</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">The claim records lease_until, 20 min ahead.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;border-left:none;padding:40px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C">heartbeat</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Lease renewed</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">The runner renews it while the agent is alive.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#E7E2D6;border:1px solid #DDD8CC;border-left:none;padding:40px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C">silence</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Lease expires</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">The task is stale and can be claimed again.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#161B26;color:#F3F0E8;padding:40px;border-radius:0 16px 16px 0">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F08A4B">takeover</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">New owner</h3>
+<p style="font-size:28px;color:#C9D0DC;line-height:1.4">Starts from wip/&lt;id&gt;, not from zero.</p>
+</div>
+</div>
+<p data-build="self" style="font-size:32px;color:#4A5160;line-height:1.4;width:1500px">The old owner's next command prints <b>LOST</b>, and it stops. Human claims never expire.</p>
+
+</section>
+<section id="done" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Mechanics · done</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Main only ever holds finished tasks</h2>
+</div>
+<div data-build="items" style="display:flex;align-items:center;gap:24px">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">1 · Merge main</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">Pick up what others finished meanwhile.</p>
+</div>
+<x-shape kind="arrow-right" style="background:#B4501C;width:80px;height:40px"></x-shape>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">2 · Run the check</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">.taskcheck: lint and tests, on the merged result.</p>
+</div>
+<x-shape kind="arrow-right" style="background:#B4501C;width:80px;height:40px"></x-shape>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#161B26;color:#F3F0E8;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">3 · Mark done, push</h3>
+<p style="font-size:28px;color:#C9D0DC;line-height:1.4">Code and status land in one go.</p>
+</div>
+</div>
+<div data-build="items" style="display:flex;gap:48px">
+<p style="flex:1;font-size:30px;color:#4A5160;line-height:1.4"><b>Agents never push.</b> A deny rule in the agent settings enforces it; done pushes for them.</p>
+<p style="flex:1;font-size:30px;color:#4A5160;line-height:1.4"><b>Check fails?</b> Nothing is pushed. Fix it and run done again.</p>
+</div>
+
+</section>
+<section id="handover" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">When workers are LLMs · 1</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Hand over the work, not a retry</h2>
+</div>
+<div data-build="items" style="display:flex;gap:40px;flex:1">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#E7E2D6;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:40px;font-weight:600">Classic job queue</h3>
+<p style="font-size:32px;color:#4A5160;line-height:1.4">A failed job is retried from scratch. The worker's state is lost, and that's fine: the job is deterministic.</p>
+</div>
+<div style="flex:1.3;display:flex;flex-direction:column;gap:24px;background:#161B26;color:#F3F0E8;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:40px;font-weight:600;color:#F08A4B">Agent board</h3>
+<ul data-build="items coal" style="font-size:32px;line-height:1.5;color:#C9D0DC">
+<li>Commits are backed up to <span style="color:#F08A4B">wip/&lt;id&gt;</span></li>
+<li>release --note says what is done and what blocks</li>
+<li>The next owner merges wip first, then continues</li>
+<li>A failed merge is saved as an attempt to learn from</li>
+</ul>
+</div>
+</div>
+
+</section>
+<section id="replan" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">When workers are LLMs · 2</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Agents may reshape the plan</h2>
+</div>
+<div data-build="items coal" style="display:grid;grid-template-columns:1fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">split</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Too big? Write 2 to 6 subtasks. The parent waits and later only integrates.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">new</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Discovered a missing task? Add it with its deps.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">hold</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Needs a human decision? Park it with the question.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">extend</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Nearly done? One more session, once.</p>
+</div>
+</div>
+<p data-build="self" style="font-size:30px;color:#4A5160">Guardrails: subtasks can't be split again; two sessions per task, then a review.</p>
+
+</section>
+<section id="humans" data-transition="fade" style="background:#161B26;color:#F3F0E8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F08A4B;text-transform:uppercase;letter-spacing:2px">When workers are LLMs · 3</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">"Humans may be asleep. Don't wait for answers."</h2>
+</div>
+<div data-build="items" style="display:flex;gap:64px;flex:1">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:40px;font-weight:600;color:#F08A4B">Agents decide and record</h3>
+<p style="font-size:32px;color:#C9D0DC;line-height:1.4">Pick the most reasonable option, then log it:</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:26px;color:#E6E2D8;background:#222A39;padding:32px;border-radius:12px;line-height:1.5">tasks.py assume &lt;id&gt; "Used bcrypt; spec names no hash"</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:40px;font-weight:600;color:#F08A4B">Humans steer, not assign</h3>
+<table data-build="items coal" style="font-size:30px;color:#C9D0DC">
+<tr><td style="width:40%;font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">assumptions</td><td style="width:60%">Review decisions later</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">unhold</td><td>Answer a parked question</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">freeze</td><td>No new claims while replanning</td></tr>
+<tr><td style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#F3F0E8">drop</td><td>This is no longer wanted</td></tr>
+</table>
+</div>
+</div>
+
+</section>
+<section id="conflicts" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">When workers are LLMs · 4</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Some conflicts are spec problems</h2>
+</div>
+<table data-build="items coal" style="font-size:30px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:40%;text-align:left">The conflict</th><th style="width:60%;text-align:left">What the agent does</th></tr>
+<tr><td>Obvious: imports, both added lines</td><td>Resolve, continue; done proves it</td></tr>
+<tr style="background:#FBF9F4"><td>Same conflict on every commit</td><td>Abort the rebase, merge main once</td></tr>
+<tr><td>Unclear what the other side meant</td><td><b>redo</b>: save the attempt, re-implement on latest main</td></tr>
+<tr style="background:#FBF9F4"><td style="color:#B4501C"><b>Two tasks disagree on design</b></td><td style="color:#B4501C"><b>release with a note, add a task to reconcile</b></td></tr>
+</table>
+<p data-build="self" style="font-size:32px;color:#4A5160;line-height:1.4;width:1500px">Git sees text. The last row is about meaning: two specs that contradict each other. That goes back to the plan, not into a guessed merge.</p>
+
+</section>
+<section id="prior" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Where this sits</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Old mechanics, new workers</h2>
+</div>
+<div data-build="items" style="display:flex;gap:48px;flex:1">
+<div style="flex:1.15;display:flex;flex-direction:column;gap:24px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Borrowed, decades old</h3>
+<table style="font-size:26px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:42%;text-align:left">Here</th><th style="width:58%;text-align:left">Prior art</th></tr>
+<tr><td>claim by push</td><td>Tuple spaces, compare-and-swap</td></tr>
+<tr style="background:#FBF9F4"><td>lease, heartbeat</td><td>Leases (1989), queue timeouts</td></tr>
+<tr><td>pull when free</td><td>Kanban, bag-of-tasks</td></tr>
+<tr style="background:#FBF9F4"><td>board in the repo</td><td>Stigmergy, blackboard systems</td></tr>
+<tr><td>skill matching</td><td>Contract Net (1980), runner labels</td></tr>
+</table>
+<p style="font-size:24px;color:#4A5160;line-height:1.4">Recent relatives: git-backed issue trackers for coding agents, parallel-agent projects that claim work via lock files in git.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#161B26;color:#F3F0E8;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600;color:#F08A4B">New because workers are LLMs</h3>
+<ul data-build="items coal" style="font-size:30px;line-height:1.5;color:#C9D0DC">
+<li>Handing over reasoning, not just results</li>
+<li>Workers that rewrite the plan</li>
+<li>Humans governing asynchronously</li>
+<li>Conflicts treated as spec signals</li>
+<li>Matching tasks to model strength</li>
+</ul>
+</div>
+</div>
+
+</section>
+<section id="skills" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Open question · next on the board</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Which model should take which task?</h2>
+</div>
+<div data-build="items" style="display:flex;gap:56px;flex:1">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">The task declares a difficulty</h3>
+<table style="font-size:30px;color:#1A1F2B">
+<tr style="background:#E7E2D6"><th style="width:22%;text-align:left">Level</th><th style="width:78%;text-align:left">Meaning</th></tr>
+<tr><td>1</td><td>Mechanical: smallest model</td></tr>
+<tr style="background:#FBF9F4"><td>2</td><td>Normal work (the default)</td></tr>
+<tr><td>3</td><td>Hard: a strong model</td></tr>
+<tr style="background:#FBF9F4"><td>4</td><td>The best model available</td></tr>
+</table>
+</div>
+<div data-build="items coal" style="flex:1;display:flex;flex-direction:column;gap:32px">
+<div style="display:flex;flex-direction:column;gap:8px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Escalate on failure</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Each failed release or redo raises the level by one.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Reserve scarce models</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">The strongest model waits for the hardest tasks, but the critical path never waits long.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Deterministic, not self-assessed</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">LLMs judge their own ability poorly. The runner decides.</p>
+</div>
+</div>
+</div>
+
+</section>
+<section id="limits" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Honest limits</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">What this does not solve</h2>
+</div>
+<div data-build="items" style="display:flex;gap:32px;flex:1">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#FBF9F4;border:1px solid #DDD8CC;padding:48px;border-radius:16px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;color:#B4501C">10s</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">of agents, not 1000s</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Every claim is a push to one branch. Contention grows with the team.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#FBF9F4;border:1px solid #DDD8CC;padding:48px;border-radius:16px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;color:#B4501C">Green</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">is not the same as useful</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">The check proves nothing broke, not that the result serves the goal.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#FBF9F4;border:1px solid #DDD8CC;padding:48px;border-radius:16px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;color:#B4501C">Spec</p>
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">Tasks are the new code</h3>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Vague tasks give vague results. Writing good tasks is now the bottleneck.</p>
+</div>
+</div>
+
+</section>
+<section id="close" data-transition="fade" style="background:#161B26;color:#F3F0E8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:space-between">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#F08A4B;text-transform:uppercase;letter-spacing:2px">Takeaway</p>
+<div data-build="items" style="display:flex;flex-direction:column;gap:24px">
+<h1 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:120px;font-weight:700;line-height:1.1;letter-spacing:-2px">Humans set the goal and the rules.</h1>
+<h1 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:120px;font-weight:700;line-height:1.1;letter-spacing:-2px;color:#F08A4B">Agents pull the work.</h1>
+<h1 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:120px;font-weight:700;line-height:1.1;letter-spacing:-2px;color:#AEB7C6">Git keeps everyone honest.</h1>
+</div>
+<p style="font-size:32px;color:#AEB7C6">Try it: one repo, a tasks/ folder, a one-page AGENTS.md · [link to repo] · Questions?</p>
+
+</section>
+
+</div>
+<div id="count"></div>
+<div id="notes"></div>
+<script>
+const NOTES = ["Welcome. In the next 20 minutes: why coordinating agents is becoming the real problem, a small protocol that solves it without a central orchestrator, and what is genuinely new versus decades old. The command at the top is the first thing every agent runs in this system.", "The cost of executing a well-defined task is collapsing. What is not collapsing is the cost of deciding what to do, splitting it, keeping parallel workers from stepping on each other, and recovering when one of them dies halfway. That is the problem this talk is about: coordination, not execution.", "The first instinct with multiple agents is to build a manager agent that hands out work. It works for small setups, but the manager becomes the bottleneck and the single point of failure, and it has to model everyone else. The alternative is pull: work waits on a shared board and workers take it when they have capacity. Nobody needs to know how many workers exist.", "None of this is new as a pattern. Kanban is pull with WIP limits. Open source is thousands of strangers coordinating through an issue tracker and pull requests. Biologists call coordination through a shared environment stigmergy. And in distributed computing, Linda's tuple spaces from 1985 are exactly \"workers atomically take a task from a shared space\". The question is what this looks like when the workers are LLM agents.", "Here is the whole architecture. Tasks are markdown files in the repo, next to the code. Agents pull work from it, humans shape it. There is no service to run: the git host you already have is the coordination layer. The repo is both the board and the product. Every state change is a commit, so you get history, blame and rollback for free.", "This is a real task from the project. Front matter holds the state; agents never edit status or owner by hand, the tool does, so every transition is a well-formed commit. Dependencies form a DAG and \"next\" sorts ready tasks by how much they unblock. The body is for humans and agents alike: a goal and checkable acceptance criteria. Task size matters a lot: 30 to 90 minutes for one agent.", "This is the entire protocol from an agent's point of view. Next, claim, done, release, assume. There are a few more for edge cases, which we'll see, but these five carry the load. The rules are a single page of markdown that every agent reads first. That is why I call this a protocol rather than a framework: you don't build inside it, you follow it, with whatever agent you already use.", "How do you get atomic claims without a server? A claim is a commit that flips the task from todo to in_progress, and then a push. Git only accepts a push that fast-forwards the branch, so if two agents race, exactly one push is accepted. The other gets a rejection, rolls back its claim and is told who won. That's optimistic concurrency, a compare-and-swap on the main ref, and it's the same trick other people building agent teams have converged on.", "Agents die: laptops close, sessions hit limits, networks drop. So a claim is a lease, the same idea as a visibility timeout in a message queue. The runner renews it with a heartbeat. If it lapses, the task is stale and anyone may take it over. The new owner doesn't start from scratch: the runner has been backing up the old owner's commits to a wip branch. And if the old owner comes back to life, the tool tells it it lost the task, so you never get two owners writing.", "Done is the gate. It merges the latest main first, because a clean merge can still break things when another task renamed something you call. Then it runs the project's check on the merged result, and only if that passes does it mark the task done and push. Agents are technically forbidden from pushing themselves. The result: main is always a set of finished, checked tasks, and it can be published to the real repos at any time.", "This is where agents differ from classic workers. A job queue retries a failed job from scratch, because the job is deterministic and the worker's state doesn't matter. An agent's real state is in its context window: what it tried, what it learned. That dies with the session. So the protocol makes agents externalize it: commits are continuously backed up to a wip branch, a release carries a note, and the next owner, possibly a different model, picks up from there. If an attempt can't be merged, redo saves it as a reference instead of throwing it away.", "The task graph is not fixed. Agents are often the first to notice that a task is too big, or that something is missing. So they may split a task into a handful of subtasks, add new ones, or put one on hold with a precise question for a human. To keep this from running away, there are hard limits: subtasks can't be split again, and after two sessions on one task the runner asks for a review. In tuple-space terms, workers also produce tuples; the interesting part is governing that.", "This line is straight from the agent rules. Agents should never block on a human. When something is unclear, they choose the most reasonable option and record it as an assumption, one line per decision a human might want to revisit. Humans then review assumptions in batch, answer held questions, freeze the board while replanning, or drop work that is no longer wanted. The human role shifts from assigning work to shaping the graph and auditing decisions. I haven't seen this treated as a first-class concept elsewhere.", "Parallel agents produce merge conflicts constantly, and agents are tempted to resolve them by guessing. The protocol gives them a ladder. Mechanical conflicts: just resolve, the check will catch mistakes. Repeated ones: merge once instead of rebasing commit by commit. Unclear ones: start over on the new main, keeping the old attempt as a reference. And the important one: if two tasks changed the same contract in different ways, that's a contradiction in the plan. The agent escalates it as a new task instead of picking a winner.", "To be honest about novelty: every mechanism on the left is decades old. Tuple spaces, leases, Kanban, blackboard systems, the Contract Net protocol for capability-based allocation, CI runners that pull jobs by label. And several groups are building git-native boards for coding agents right now. What is genuinely new is on the right: what you need once the workers are LLMs. That's where the open problems are, and where I'd like your ideas. [Add specific references you want to cite here.]", "This is the next task on our own board, so it's a design, not a result yet. Agents are not equal: some teammates have access to stronger models than others. Rather than having agents judge whether a task suits them, which LLMs do badly, each task carries a difficulty, the runner picks a model per task, and failures escalate: a task that failed on a mid-size model runs on a stronger one next. The scarce top model is reserved for the hardest work without letting the critical path starve.", "Three honest limits. First, git as a lock works for tens of agents; with hundreds, push contention and fetch latency would dominate. Second, the check only proves that nothing broke; whether the work actually moves the goal forward still needs human judgment, or a separate review step. Third, and most important for adoption: the quality of the outcome is bounded by the quality of the tasks. [Add your own experience from the dry run here.]", "That's the whole idea in three lines. You don't need a platform to start: a repo, a folder of task files, one page of rules, and whatever agents you already use. The interesting work is in the open questions: handover, agent-written plans, and matching tasks to models. I'd love to hear how you would approach them. Questions?"];
+const stage = document.getElementById("stage");
+const slides = [...stage.querySelectorAll(":scope > section")];
+let i = 0, step = 0;
+
+// Build steps per slide, from data-build markers:
+//   data-build="self"        the element appears as one step
+//   data-build="items"       its children appear one by one (table: rows, minus a header row)
+//   data-build="items coal"  same, and earlier children are dimmed once a later one appears
+//   data-build-with="next"   on a child: appears together with the next child (arrows next to boxes)
+// x-shape children always appear together with the next child. Steps run in document order,
+// so a list inside a box comes right after the box.
+const builds = slides.map(slide => {
+  const units = [];
+  slide.querySelectorAll("[data-build]").forEach(el => {
+    const mode = el.dataset.build.split(/\s+/);
+    if (mode.includes("self")) { units.push({ els: [el], list: null }); return; }
+    let kids = el.tagName === "TABLE" ? [...el.querySelectorAll("tr")] : [...el.children];
+    if (el.tagName === "TABLE" && kids[0] && kids[0].querySelector("th")) kids = kids.slice(1);
+    const list = { coal: mode.includes("coal") };
+    let pending = [];
+    for (const k of kids) {
+      pending.push(k);
+      if (k.tagName === "X-SHAPE" || k.dataset.buildWith === "next") continue;
+      units.push({ els: pending, list }); pending = [];
+    }
+    if (pending.length) units.push({ els: pending, list });
+  });
+  units.sort((a, b) => a.els[0].compareDocumentPosition(b.els[0]) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+  units.forEach(u => u.els.forEach(e => e.classList.add("b-unit")));
+  return units;
+});
+
+function render() {
+  const units = builds[i];
+  const latest = new Map();  // list -> index of its most recently revealed unit
+  units.forEach((u, k) => { if (k < step && u.list) latest.set(u.list, k); });
+  units.forEach((u, k) => u.els.forEach(e => {
+    e.classList.toggle("b-hidden", k >= step);
+    e.classList.toggle("b-past", k < step && u.list && u.list.coal && latest.get(u.list) !== k);
+  }));
+}
+
+function next() {
+  if (step < builds[i].length) { step++; render(); }
+  else if (i < slides.length - 1) show(i + 1, 0);
+}
+function prev() {
+  if (step > 0) { step--; render(); }
+  else if (i > 0) show(i - 1, Infinity);
+}
+
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+function show(n, s = 0) {
+  i = Math.max(0, Math.min(slides.length - 1, n));
+  step = Math.min(s, builds[i].length);
+  slides.forEach((el, k) => el.classList.toggle("on", k === i));
+  // jumping to a slide (back, Home/End, reload) shows its state at once, without animation
+  stage.classList.add("b-instant"); render(); void stage.offsetWidth; stage.classList.remove("b-instant");
+  document.getElementById("count").textContent = `${i + 1} / ${slides.length}`;
+  document.getElementById("notes").textContent = NOTES[i] || "(no notes)";
+  history.replaceState(null, "", "#" + (i + 1));
+}
+addEventListener("keydown", e => {
+  if (e.shiftKey && e.key === "ArrowRight") show(i + 1);  // skip the rest of this slide's builds
+  else if (e.shiftKey && e.key === "ArrowLeft") show(i - 1);
+  else if (["ArrowRight", "ArrowDown", "PageDown", " ", "Enter"].includes(e.key)) next();
+  else if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace"].includes(e.key)) prev();
+  else if (e.key === "Home") show(0);
+  else if (e.key === "End") show(slides.length - 1, Infinity);
+  else if (e.key === "a" || e.key === "A") show(i, Infinity);  // reveal all of this slide
+  else if (e.key === "f" || e.key === "F") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  else if (e.key === "n" || e.key === "N") document.body.classList.toggle("notes");
+  else return;
+  e.preventDefault();
+});
+addEventListener("click", e => { if (!e.target.closest("#notes")) next(); });
+addEventListener("contextmenu", e => { e.preventDefault(); prev(); });
+addEventListener("resize", fit);
+fit();
+const [hs, hb] = location.hash.slice(1).split(".");  // #9 = slide 9; #9.3 = slide 9 after 3 builds
+show((parseInt(hs) || 1) - 1, parseInt(hb) || 0);
+</script>
+</body></html>

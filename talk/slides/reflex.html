@@ -1,0 +1,27 @@
+<section id="reflex" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">The usual reflex</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Push vs. pull</h2>
+</div>
+<div data-build="items" style="display:flex;gap:40px;flex:1">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#E7E2D6;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600">Orchestrator pushes</h3>
+<ul data-build="items coal" style="font-size:32px;line-height:1.5;color:#4A5160">
+<li>One agent plans and assigns work</li>
+<li>Must know every worker's capacity and skill</li>
+<li>Single point of failure and bottleneck</li>
+<li>Its context window limits the whole team</li>
+</ul>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#161B26;color:#F3F0E8;padding:48px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:600;color:#F08A4B">Workers pull</h3>
+<ul data-build="items coal" style="font-size:32px;line-height:1.5;color:#C9D0DC">
+<li>Work sits on a shared board</li>
+<li>Whoever has capacity takes the next item</li>
+<li>Add or lose a worker: nothing to reconfigure</li>
+<li>Consistency comes from the board, not a boss</li>
+</ul>
+</div>
+</div>
+<aside>The first instinct with multiple agents is to build a manager agent that hands out work. It works for small setups, but the manager becomes the bottleneck and the single point of failure, and it has to model everyone else. The alternative is pull: work waits on a shared board and workers take it when they have capacity. Nobody needs to know how many workers exist.</aside>
+</section>

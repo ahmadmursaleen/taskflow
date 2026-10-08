@@ -1,0 +1,27 @@
+<section id="done" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">Mechanics · done</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Main only ever holds finished tasks</h2>
+</div>
+<div data-build="items" style="display:flex;align-items:center;gap:24px">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">1 · Merge main</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">Pick up what others finished meanwhile.</p>
+</div>
+<x-shape kind="arrow-right" style="background:#B4501C;width:80px;height:40px"></x-shape>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">2 · Run the check</h3>
+<p style="font-size:28px;color:#4A5160;line-height:1.4">.taskcheck: lint and tests, on the merged result.</p>
+</div>
+<x-shape kind="arrow-right" style="background:#B4501C;width:80px;height:40px"></x-shape>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#161B26;color:#F3F0E8;padding:40px;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:600">3 · Mark done, push</h3>
+<p style="font-size:28px;color:#C9D0DC;line-height:1.4">Code and status land in one go.</p>
+</div>
+</div>
+<div data-build="items" style="display:flex;gap:48px">
+<p style="flex:1;font-size:30px;color:#4A5160;line-height:1.4"><b>Agents never push.</b> A deny rule in the agent settings enforces it; done pushes for them.</p>
+<p style="flex:1;font-size:30px;color:#4A5160;line-height:1.4"><b>Check fails?</b> Nothing is pushed. Fix it and run done again.</p>
+</div>
+<aside>Done is the gate. It merges the latest main first, because a clean merge can still break things when another task renamed something you call. Then it runs the project's check on the merged result, and only if that passes does it mark the task done and push. Agents are technically forbidden from pushing themselves. The result: main is always a set of finished, checked tasks, and it can be published to the real repos at any time.</aside>
+</section>

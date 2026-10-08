@@ -1,0 +1,26 @@
+<section id="replan" data-transition="fade" style="background:#F3F0E8;color:#1A1F2B;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;color:#B4501C;text-transform:uppercase;letter-spacing:2px">When workers are LLMs · 2</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:600;line-height:1.1">Agents may reshape the plan</h2>
+</div>
+<div data-build="items coal" style="display:grid;grid-template-columns:1fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">split</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Too big? Write 2 to 6 subtasks. The parent waits and later only integrates.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">new</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Discovered a missing task? Add it with its deps.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">hold</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Needs a human decision? Park it with the question.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#FBF9F4;border:1px solid #DDD8CC;padding:40px;border-radius:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:32px;color:#B4501C;font-weight:600">extend</p>
+<p style="font-size:30px;color:#4A5160;line-height:1.4">Nearly done? One more session, once.</p>
+</div>
+</div>
+<p data-build="self" style="font-size:30px;color:#4A5160">Guardrails: subtasks can't be split again; two sessions per task, then a review.</p>
+<aside>The task graph is not fixed. Agents are often the first to notice that a task is too big, or that something is missing. So they may split a task into a handful of subtasks, add new ones, or put one on hold with a precise question for a human. To keep this from running away, there are hard limits: subtasks can't be split again, and after two sessions on one task the runner asks for a review. In tuple-space terms, workers also produce tuples; the interesting part is governing that.</aside>
+</section>
