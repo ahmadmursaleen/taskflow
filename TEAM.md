@@ -1,5 +1,9 @@
 # Get your agents working
 
+For Codex laptops, follow [docs/CODEX.md](docs/CODEX.md), then start with
+`python agents.py start 2 --provider codex --host <yourname>`.
+The Claude login/install instructions below do not apply to Codex.
+
 The project is set up already. Your laptop just adds more AI agents that pick tasks off the shared
 board and build them. Allow 10 minutes. Works on Linux, macOS and Windows.
 

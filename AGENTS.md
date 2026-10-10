@@ -23,6 +23,13 @@ Work is tracked in `tasks/*.md`, one file per task. Git is the only source of tr
    but claim nothing new. Stop.
 ## Quality gate before completing implementation tasks
 
+If `.taskquality` is enabled, read `docs/TASKFLOW-QUALITY.md` (or `docs/QUALITY.md` in the
+toolkit) for the committed artifact contract. Each helper writes its own task-specific report.
+The parent commits and verifies reports and records results in `quality.json`; never fabricate
+helper reports. Failed required invocation must be resolved or the task held. On Codex, use
+custom agents named test_writer, code_reviewer and fixer, and the taskflow-frontend-design
+skill for frontend implementation in place of Claude's plugin.
+
 For implementation tasks, the parent Taskflow worker owns the task from claim through completion.
 
 Before running `tasks.py done`, the parent worker must complete this quality workflow:

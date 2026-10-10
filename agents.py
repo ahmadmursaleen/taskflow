@@ -30,18 +30,18 @@ Live status: the runner reads the agent's output as it streams, turns each step 
 one-commit branch status/<host>/agent-N. `python tasks.py watch` shows these on any machine; main's
 history is not touched.
 
-Runs on Linux, macOS and Windows (on Windows: Git for Windows and Claude Code's native claude.exe).
+Runs on Linux, macOS and Windows (on Windows: Git for Windows).
 
-Agent command (default: Claude Code headless). Override with --cmd or AGENT_CMD; the prompt is
-appended as the last argument. --yolo adds --dangerously-skip-permissions: agents can then run
-ANY command on this machine unattended, so use a VM/container.
+Agent command defaults to Claude Code headless. Select --provider codex for Codex CLI.
+Override with --cmd or AGENT_CMD; the prompt is appended as the last argument.
+--yolo bypasses the selected provider's protections: use only an isolated environment.
 """
 import argparse, json, os, re, shlex, shutil, signal, socket, subprocess, sys, time
 sys.dont_write_bytecode = True  # importing tasks.py must not litter clones with __pycache__
 from pathlib import Path
 
 WINDOWS = os.name == "nt"
-if WINDOWS and not sys.flags.utf8_mode:  # UTF-8 for files, logs, git output and every child process
+if __name__ == "__main__" and WINDOWS and not sys.flags.utf8_mode:  # UTF-8 for files, logs, git output and every child process
     os.environ["PYTHONUTF8"] = "1"
     try:
         sys.exit(subprocess.call([sys.executable, *sys.argv]))
@@ -54,6 +54,8 @@ STREAM = "--output-format stream-json --verbose"  # one JSON event per step, so 
 # agents' fresh clones are, so the project's allow/deny rules are passed explicitly
 DEFAULT_CMD = f"claude -p {STREAM} --permission-mode acceptEdits --settings .claude/settings.json"
 YOLO_CMD = f"claude -p {STREAM} --dangerously-skip-permissions"
+CODEX_CMD = "codex exec --json --approve-for-me"
+CODEX_YOLO_CMD = "codex exec --json --dangerously-bypass-approvals-and-sandbox"
 CLAIMED = re.compile(r"CLAIMED (\S+) as ")
 LIMIT = re.compile(r"(usage|rate|session|weekly|5-hour)[ -]limit|limit (reached|exceeded)|hit your limit|"
                    r"too many requests|\b429\b", re.I)
@@ -163,6 +165,29 @@ def describe(line, clone):
         return one_line(line), None
     if not isinstance(ev, dict):
         return None, None
+    if ev.get("type") in ("error", "turn.failed"):
+        error = ev.get("error") or {}
+        msg = error.get("message", "") if isinstance(error, dict) else str(error)
+        return "failed: " + one_line(ev.get("message") or msg or "Codex turn failed"), None
+    if ev.get("type") == "turn.completed":
+        return "finished: Codex turn", "Codex turn completed"
+    if ev.get("type", "").startswith("item."):
+        item = ev.get("item") or {}
+        kind = item.get("type")
+        if kind == "agent_message":
+            return "\u00bb " + one_line(item.get("text", "")), None
+        if kind == "command_execution":
+            return "$ " + one_line(item.get("command", "")), None
+        if kind == "file_change":
+            return "editing " + one_line(", ".join(c.get("path", "") for c in item.get("changes", []))), None
+        if kind == "mcp_tool_call":
+            return "tool: " + one_line(f"{item.get('server', '')}/{item.get('tool', '')}"), None
+        if kind == "web_search":
+            return "web: " + one_line(item.get("query", "")), None
+        if kind == "todo_list":
+            pending = [i.get("text", "") for i in item.get("items", []) if not i.get("completed")]
+            return "plan: " + one_line(pending[0] if pending else "complete"), None
+        return None, None
     if ev.get("type") == "result":
         r = one_line(ev.get("result") or ev.get("subtype") or "")
         if ev.get("is_error") or ev.get("subtype", "success") != "success":
@@ -249,7 +274,46 @@ def agent_argv(cmd, prompt):
     if WINDOWS:
         argv = [x[1:-1] if len(x) > 1 and x[0] == x[-1] == '"' else x for x in argv]
     argv[0] = shutil.which(argv[0]) or argv[0]  # Windows: finds claude.exe (PATHEXT)
+    if WINDOWS and Path(argv[0]).suffix.lower() in (".cmd", ".bat", ".ps1"):
+        # npm's Windows shim cannot be passed to CreateProcess. Launch Node directly:
+        # never interpolate an agent prompt into cmd.exe or PowerShell source.
+        launcher = Path(argv[0]).parent / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+        if Path(argv[0]).stem.lower() == "codex" and launcher.is_file():
+            node = shutil.which("node")
+            if not node:
+                raise ValueError("npm-installed Codex requires node on PATH")
+            argv = [node, str(launcher), *argv[1:]]
+        else:
+            raise ValueError("Use a native executable or 'node <launcher.js>' for Windows custom commands")
     return [*argv, prompt]
+
+
+def provider_command(a):
+    """Explicit --cmd wins; provider controls event/failure semantics, not credentials."""
+    provider = a.provider or os.environ.get("AGENT_PROVIDER") or "claude"
+    if provider not in ("claude", "codex", "custom"):
+        raise ValueError("AGENT_PROVIDER must be claude, codex, or custom")
+    override = a.cmd or os.environ.get("AGENT_CMD")
+    if provider == "custom" and not override:
+        raise ValueError("--provider custom requires --cmd or AGENT_CMD")
+    default = (CODEX_YOLO_CMD if a.yolo else CODEX_CMD) if provider == "codex" else (
+        YOLO_CMD if a.yolo else DEFAULT_CMD)
+    return provider, override or default
+
+
+def codex_limit_info(text):
+    """Only Codex error events count as quota errors; test output may contain 429."""
+    messages = []
+    for line in text.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("type") in ("error", "turn.failed"):
+            message, _ = describe(line, ".")
+            if message and LIMIT.search(message):
+                messages.append(message)
+    return limit_info("\n".join(messages)) if messages else None
 
 
 # ---------- launcher ----------
@@ -268,7 +332,11 @@ def cmd_start(a):
     if not (root / "tasks.py").exists() or not list((root / "tasks").glob("*.md")):
         sys.exit("need tasks.py and tasks/*.md committed in the repo")
     branch = sh("git", "rev-parse", "--abbrev-ref", "HEAD", cwd=root).stdout.strip()
-    cmd = a.cmd or os.environ.get("AGENT_CMD") or (YOLO_CMD if a.yolo else DEFAULT_CMD)
+    try:
+        provider, cmd = provider_command(a)
+        agent_argv(cmd, "preflight")
+    except ValueError as ex:
+        sys.exit(str(ex))
     base = base_dir(root)
     (base / "logs").mkdir(parents=True, exist_ok=True)
     st = json.loads(state_file(root).read_text()) if state_file(root).exists() else {}
@@ -290,13 +358,13 @@ def cmd_start(a):
         log = open(base / "logs" / f"{name}.log", "a", encoding="utf-8")
         argv = [sys.executable, str(Path(__file__).resolve()), "run", name, str(clone), "--owner", owner,
                 "--cmd", cmd, "--timeout", str(a.timeout), "--lease", str(a.lease), "--limit-wait", str(a.limit_wait),
-                "--task-budget", str(a.task_budget)]
+                "--task-budget", str(a.task_budget), "--provider", provider]
         io = dict(stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         try:  # Windows: leave the terminal's job object too, if allowed, so closing the terminal is safe
             proc = subprocess.Popen(argv, **io, **detached(breakaway=True))
         except OSError:
             proc = subprocess.Popen(argv, **io, **detached())
-        st[name] = {"pid": proc.pid, "clone": str(clone), "owner": owner}
+        st[name] = {"pid": proc.pid, "clone": str(clone), "owner": owner, "provider": provider}
         print(f"started {name} pid {proc.pid} in {clone}")
         time.sleep(a.stagger)  # de-synchronise first claims
     state_file(root).write_text(json.dumps(st, indent=2))
@@ -449,7 +517,7 @@ def cmd_run(a):
                 sh("git", "push", "-q", "-f", "origin", f"HEAD:refs/heads/{tasks.wip_branch(tid)}", cwd=clone)
         return lost
 
-    status = dict(owner=a.owner, state="starting", task=None, doing=None, doing_at=None, updated=0)
+    status = dict(owner=a.owner, provider=a.provider, state="starting", task=None, doing=None, doing_at=None, updated=0)
     pushed = [0.0, None]
     status_file = clone.parent / "logs" / f"{a.name}.status.json"
 
@@ -601,7 +669,7 @@ def cmd_run(a):
             buf[0] += reader.read()
             *lines, buf[0] = buf[0].split("\n")
             for line in lines:
-                m = CLAIMED.search(line)
+                m = CLAIMED.search(line) if a.provider != "codex" else None
                 if m and m.group(1) in ts:
                     status["task"] = m.group(1)
                     held.add(m.group(1))
@@ -612,6 +680,13 @@ def cmd_run(a):
                     status.update(doing=doing, doing_at=int(time.time()))
                 if result is not None:
                     final[0] = result
+            # Tool output is not guaranteed to echo CLAIMED (Codex command events
+            # may escape it). Reconcile actual task files, never claim from prose.
+            if a.provider == "codex":
+                current = owned()
+                if current:
+                    status["task"] = current[0]["id"]
+                    held.update(t["id"] for t in current)
             publish()
 
         with open(out, "w", encoding="utf-8") as f, open(out, encoding="utf-8", errors="replace") as reader:
@@ -635,11 +710,14 @@ def cmd_run(a):
                     kill_tree(p.pid)
                     p.wait()
             drain(reader)
+            if buf[0]:  # accept a final JSON event without a trailing newline
+                buf[0] += "\n"
+                drain(reader)
         child[0] = None
         tail = final[0] or " | ".join(filter(None, (describe(l, clone)[0] for l in
                                                     out.read_text(encoding="utf-8", errors="replace").splitlines()[-3:])))
         log(f"session {'killed, ' + why if why else f'exit {p.returncode}'}: {one_line(tail, 300)}")
-        failed = not why and (p.returncode != 0 or errored[0])
+        failed = not why and (p.returncode != 0 or errored[0] or (a.provider == "codex" and final[0] is None))
         fails = fails + 1 if failed else 0
         if not failed and not (why or "").startswith("task taken over"):
             now_mine = {t["id"]: t for t in tasks.load().values()
@@ -656,7 +734,8 @@ def cmd_run(a):
                 if was_extended or now_mine[tid]["extended"] != a.owner:  # no extend, split or hold chosen
                     force_hold(tid, f"no decision after {spent[tid][0]} sessions (~{int(spent[tid][1] // 60)} min)"
                                     " and a review")
-        limit = limit_info(out.read_text(encoding="utf-8", errors="replace")) if failed else None
+        output = out.read_text(encoding="utf-8", errors="replace")
+        limit = (codex_limit_info(output) if a.provider == "codex" else limit_info(output)) if failed else None
         if limit or fails >= 3:  # out of tokens (or broken for a while): hand the work to other machines
             reason = limit[0] if limit else f"{fails} failed sessions in a row: {one_line(tail, 100)}"
             hand_off(reason)
@@ -671,6 +750,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = p.add_subparsers(dest="c", required=True)
     s = sp.add_parser("start"); s.add_argument("n", type=int); s.add_argument("--cmd")
+    s.add_argument("--provider", choices=["claude", "codex", "custom"], help="default: AGENT_PROVIDER or claude")
     s.add_argument("--yolo", action="store_true"); s.add_argument("--timeout", type=int, default=1800)
     s.add_argument("--lease", type=int, default=1200, help="seconds a dead agent's task stays blocked")
     s.add_argument("--first", type=int, default=1, help="number of first agent (to add more later)")
@@ -689,6 +769,7 @@ def main():
     s = sp.add_parser("run"); s.add_argument("name"); s.add_argument("clone")
     s.add_argument("--owner", required=True); s.add_argument("--lease", type=int, default=1200)
     s.add_argument("--cmd", required=True); s.add_argument("--timeout", type=int, default=1800)
+    s.add_argument("--provider", choices=["claude", "codex", "custom"], default="claude")
     s.add_argument("--limit-wait", type=int, default=900); s.add_argument("--task-budget", type=int, default=2)
     s.set_defaults(f=cmd_run)
     a = p.parse_args(); a.f(a)
