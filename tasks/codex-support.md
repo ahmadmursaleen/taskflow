@@ -1,6 +1,6 @@
 ---
 title: Codex worker support with portable quality helpers
-status: in_progress
+status: done
 owner: ORION\mursalah
 deps: []
 prio: 1
