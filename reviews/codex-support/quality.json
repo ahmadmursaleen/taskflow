@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "task_id": "codex-support",
+  "reviewed_revision": "696a4ffb09cbb0514ea02b0c05ef288959186e90",
+  "helpers": {
+    "test-writer": {"status": "completed", "report": "reviews/codex-support/tests.md"},
+    "code-reviewer": {"status": "completed", "report": "reviews/codex-support/review.md"},
+    "fixer": {"status": "completed", "report": "reviews/codex-support/fixes.md"}
+  },
+  "fixes_required": true,
+  "findings": [
+    {"id": "CR-1", "blocking": true, "disposition": "resolved"},
+    {"id": "CR-2", "blocking": true, "disposition": "resolved"},
+    {"id": "TW-1", "blocking": true, "disposition": "resolved"},
+    {"id": "LIVE-1", "blocking": true, "disposition": "resolved"}
+  ],
+  "validation": {"status": "passed", "command": "python -X utf8 -m unittest discover -s tests -p test_*.py -v"},
+  "coverage": {"status": "unavailable", "reason": "No Python coverage command or provider is configured; the coverage module is unavailable. Task-scoped regression tests passed, but no numerical coverage measurement is claimed."}
+}
