@@ -1,9 +1,10 @@
 ---
 title: Codex worker support with portable quality helpers
-status: todo
-owner:
+status: in_progress
+owner: ORION\mursalah
 deps: []
 prio: 1
+lease_until: 
 ---
 ## Goal
 Add an opt-in Codex worker provider while preserving Claude and custom commands. Port the quality helper definitions and task-scoped coverage instructions, provide a project frontend-design skill, and enforce committed quality evidence before task completion.
