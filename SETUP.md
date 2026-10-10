@@ -1,5 +1,10 @@
 # Setup: from repos + brief to autonomous agents
 
+For Codex, start with [docs/CODEX.md](docs/CODEX.md) and `setup_codex.py`. The installer supplies
+Codex helpers, a portable frontend skill and the committed quality gate described below.
+Claude installation and permission steps remain Claude-specific; planning, acceptance criteria,
+coverage and quality requirements apply to either provider.
+
 For the team lead. Open Claude Code in the folder that contains `taskflow/` and say:
 **"Guide me through taskflow/SETUP.md, one phase at a time."**
 

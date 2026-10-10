@@ -3,6 +3,10 @@
 Git is the source of truth. One file per task in `tasks/`, claimed atomically via `git push`.
 Needs only Python 3 and git.
 
+**Codex workers:** use `python agents.py start 1 --provider codex`. Follow
+[docs/CODEX.md](docs/CODEX.md) to install helpers, the frontend skill and the committed
+quality-evidence gate. Claude remains the default; both providers share the Git board.
+
 | File | Purpose |
 |---|---|
 | `tasks.py` | task CLI: `new list next claim done release redo extend split hold unhold drop undrop freeze unfreeze assume assumptions heartbeat check status graph watch repos` |
@@ -10,6 +14,8 @@ Needs only Python 3 and git.
 | `repos.py` | `tasks.py repos`: work on several repos as folders of one repo, synced back to them |
 | `templates/gitlab-ci-sync.yml` | GitLab CI job that runs the repo sync every 30 min |
 | `agents.py` | launch/monitor N Claude agents, each in its own clone, looping over the board |
+| `quality.py` | validate committed task-specific helper evidence when `.taskquality` is enabled |
+| `setup_codex.py` | install Codex scripts, helper configurations and frontend skill into a project |
 | `AGENTS.md` | protocol the agents read (copy into the project) |
 | `templates/fullstack/tasks/` | 22-task starter set for a typical full-stack + AI app |
 | `tests/test_publish.sh` | scenario tests: status changes never push unfinished code to main (`bash tests/test_publish.sh`) |

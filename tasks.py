@@ -10,7 +10,7 @@ Leases: with TASK_LEASE=<seconds> set (agents.py does this), a claim records
 lease has expired is "stale" and can be claimed again (a takeover), so a crashed
 machine cannot block the board. Claims without TASK_LEASE (humans) never expire.
 """
-import argparse, calendar, os, re, subprocess, sys, time
+import argparse, calendar, json, os, re, subprocess, sys, time
 from pathlib import Path
 
 if __name__ == "__main__" and os.name == "nt" and not sys.flags.utf8_mode:  # Windows: UTF-8 for files,
@@ -51,6 +51,7 @@ def parse_text(text, tid, path=None):
                 lease_until=meta.get("lease_until", ""), attempts=int(meta.get("attempts") or 1),
                 hold=meta.get("hold", ""), extended=meta.get("extended", ""), parent=meta.get("parent", ""),
                 releases=int(meta.get("releases") or 0), subtasks=meta.get("subtasks", ""),
+                quality=meta.get("quality", "required"), quality_reason=meta.get("quality_reason", ""),
                 deps=deps, prio=int(meta.get("prio", "2") or 2), body=body)
 
 
@@ -474,7 +475,11 @@ def cmd_done(a):
 
         def guard(t):
             err = None if a.force else owned_by_me(t)
-            return err or ("RETEST" if cmd and code_changed(tested) else None)
+            if err or (cmd and code_changed(tested)):
+                return err or "RETEST"
+            # Neither --force nor --skip-check bypasses committed quality evidence.
+            evidence_error = quality_error(t)
+            return f"QUALITY REQUIRED: {evidence_error}" if evidence_error else None
         t, err = update(a.id, f"done: {a.id} by {me()}", guard, with_code=True, status="done", lease_until="")
         if err != "RETEST":
             break
@@ -482,6 +487,9 @@ def cmd_done(a):
     else:
         sys.exit("main keeps changing; run done again")
     if err:
+        if err.startswith("QUALITY REQUIRED:"):
+            sys.exit(f"{err}. Refresh the committed quality evidence and run done again; "
+                     "this quality failure does not change task ownership.")
         sys.exit(f"REFUSED: {err}. The task is no longer yours: stop working on it.")
     if remote():  # the backup is on main now; abandoned attempts (wip/<id>-attemptN) are kept as history
         git("push", "-q", remote(), "--delete", wip_branch(a.id), check=False)
@@ -795,6 +803,17 @@ def cmd_graph(a):
     print("wrote BOARD.md and board.html")
 
 
+def quality_error(t):
+    committed = git("cat-file", "-e", "HEAD:.taskquality", check=False).returncode == 0
+    if committed or (ROOT / ".taskquality").exists():
+        return companion("quality").validate(sys.modules[__name__], t)
+    return None
+
+
+def cmd_quality(a):
+    print(json.dumps(companion("quality").scope(sys.modules[__name__], a.id), indent=2))
+
+
 def board():
     return companion("board")
 
@@ -891,6 +910,8 @@ def main():
     s.add_argument("--pull", action="store_true"); s.set_defaults(f=cmd_assumptions)
     s = sp.add_parser("heartbeat"); s.add_argument("ids", nargs="*"); s.set_defaults(f=cmd_heartbeat)
     sp.add_parser("check").set_defaults(f=cmd_check)
+    s = sp.add_parser("quality", help="print the committed scope for task review evidence")
+    s.add_argument("id"); s.set_defaults(f=cmd_quality)
     sp.add_parser("status").set_defaults(f=cmd_status)
     s = sp.add_parser("graph"); s.add_argument("--pull", action="store_true"); s.set_defaults(f=cmd_graph)
     s = sp.add_parser("repos", help="sync folders with the original repos (see repos.py)")

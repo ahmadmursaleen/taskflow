@@ -15,6 +15,5 @@ Add an opt-in Codex worker provider while preserving Claude and custom commands.
 - [ ] An installer provides Codex helper configurations and a frontend skill from versioned templates, without overwriting existing user configuration.
 - [ ] Completion validates committed task-specific quality reports, scope freshness, required fixes and final validation; force/skip-check cannot bypass quality enforcement.
 - [ ] Regression tests use temporary local Git remotes and fake workers; setup and limitations are documented.
-- [ ] 
 
 ## Notes

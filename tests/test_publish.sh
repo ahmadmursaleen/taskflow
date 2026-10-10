@@ -16,6 +16,7 @@ tp() { local who=$1; shift; (cd "$W/$who" && TASK_OWNER=$who python3 tasks.py "$
 
 git init -q --bare -b main remote.git
 git clone -q remote.git seed 2>/dev/null && cd seed
+git checkout -q -B main
 git config user.email t@t; git config user.name seed
 cp "$SRC/tasks.py" "$SRC/board.py" "$SRC/repos.py" .
 echo "true" > .taskcheck
